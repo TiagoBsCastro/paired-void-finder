@@ -19,6 +19,24 @@ def _grid_points(n_points: int, box_size: float, rng: np.random.Generator, jitte
     return wrap_points(points, box_size)
 
 
+def _random_exterior_points(
+    rng: np.random.Generator,
+    n: int,
+    box_size: float,
+    centers: np.ndarray,
+    radii: np.ndarray,
+) -> np.ndarray:
+    """Generate n random points strictly outside all void spheres (periodic)."""
+    collected: list[np.ndarray] = []
+    while len(collected) < n:
+        batch = rng.uniform(0.0, box_size, size=(max(n * 6, 512), 3))
+        outside = np.ones(len(batch), dtype=bool)
+        for c, r in zip(centers, radii):
+            outside &= periodic_distance(batch, c, box_size) > r
+        collected.extend(batch[outside])
+    return np.asarray(collected[:n], dtype=float)
+
+
 def make_swiss_cheese_mock(
     box_size: float,
     n_points: int,
@@ -33,8 +51,8 @@ def make_swiss_cheese_mock(
 
     Modes:
         geometry: A outside spheres, B inside spheres.
-        veto: same as geometry, plus a sparse random subset of exterior points
-              moved to B as decoys.
+        veto: same as geometry, plus independently sampled random exterior
+              points added to B as decoys (they do **not** overlap with A).
         hard: alias for veto with a larger exterior B fraction.
     """
     rng = np.random.default_rng(seed)
@@ -57,18 +75,19 @@ def make_swiss_cheese_mock(
     if mode not in {"geometry", "veto", "hard"}:
         raise ValueError("mode must be 'geometry', 'veto', or 'hard'")
 
-    B_mask = inside_any.copy()
+    A_positions = points[~inside_any]
+    B_positions = points[inside_any]
+    n_decoy = 0
+
     if mode in {"veto", "hard"}:
         frac = exterior_b_fraction if mode == "veto" else max(exterior_b_fraction, 0.08)
-        exterior = np.flatnonzero(~inside_any)
-        n_decoy = int(round(frac * len(exterior)))
+        n_decoy = int(round(frac * int(np.sum(~inside_any))))
         if n_decoy > 0:
-            decoys = rng.choice(exterior, size=n_decoy, replace=False)
-            B_mask[decoys] = True
+            # Decoys are independent random exterior points, NOT grid points,
+            # so they have no overlap with A.
+            decoy_positions = _random_exterior_points(rng, n_decoy, box_size, centers, radii)
+            B_positions = np.vstack([B_positions, decoy_positions])
 
-    A_mask = ~inside_any
-    A_positions = points[A_mask]
-    B_positions = points[B_mask]
     A = Catalog(A_positions, np.ones(len(A_positions)), box_size, name="A")
     B = Catalog(B_positions, np.ones(len(B_positions)), box_size, name="B")
     true_volumes = 4.0 * np.pi * radii**3 / 3.0
@@ -82,6 +101,7 @@ def make_swiss_cheese_mock(
             "mode": mode,
             "seed": seed,
             "n_points": n_points,
-            "truth_id_for_base_points": truth_id,
+            "n_decoy_b": n_decoy,
+            "truth_id_for_grid_points": truth_id,
         },
     )

@@ -46,6 +46,28 @@ def veto_boundaries_by_component(edges: list[Edge], component_labels: np.ndarray
     return {k: np.array(sorted(v), dtype=int) for k, v in out.items()}
 
 
+def shell_boundaries_by_component(
+    B_positions: np.ndarray,
+    A_positions: np.ndarray,
+    component_labels: np.ndarray,
+    box_size: float,
+    l_shell: float,
+) -> dict[int, np.ndarray]:
+    """Build A-boundary sets as a shell around each B component.
+
+    For each component, collect every A point whose periodic distance to any
+    B point in that component is at most ``l_shell``.
+    """
+    tree = cKDTree(A_positions, boxsize=box_size)
+    out: dict[int, set[int]] = {int(c): set() for c in np.unique(component_labels)}
+    for comp_id in np.unique(component_labels):
+        B_in_comp = B_positions[component_labels == comp_id]
+        for b_pos in B_in_comp:
+            near = tree.query_ball_point(b_pos, r=l_shell)
+            out[int(comp_id)].update(map(int, near))
+    return {k: np.array(sorted(v), dtype=int) for k, v in out.items()}
+
+
 def dilate_boundaries(
     A_positions: np.ndarray,
     boundary_sets: dict[int, np.ndarray],

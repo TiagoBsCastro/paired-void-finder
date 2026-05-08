@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import yaml
@@ -43,6 +43,9 @@ class MockCatalog:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+_VALID_BOUNDARY_MODES: frozenset[str] = frozenset({"veto", "shell", "hybrid"})
+
+
 @dataclass(slots=True)
 class FinderParameters:
     """Parameters controlling the void finder."""
@@ -52,13 +55,25 @@ class FinderParameters:
     b_BB: float = 1.5
     eta: float = 0.5
     N_veto: int = 8
+    # boundary_mode selects how the A-boundary of each component is built:
+    #   "veto"   – A points that vetoed inter-component B--B links (original behaviour)
+    #   "shell"  – A points within b_shell * mean_A_spacing of any B point in the component
+    #   "hybrid" – veto first; fall back to shell when |veto boundary| < N_A_min
+    boundary_mode: str = "veto"
+    b_shell: float = 1.5
     b_grow: float = 0.5
     lambda_alpha: float = 2.0
     N_B_min: int = 5
     N_A_min: int = 12
     R_min: float = 0.0
-    use_veto_halos: bool = True
     enable_veto: bool = True
+
+    def __post_init__(self) -> None:
+        if self.boundary_mode not in _VALID_BOUNDARY_MODES:
+            raise ValueError(
+                f"boundary_mode must be one of {sorted(_VALID_BOUNDARY_MODES)!r}, "
+                f"got {self.boundary_mode!r}"
+            )
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "FinderParameters":
@@ -75,7 +90,7 @@ class FinderParameters:
         flat.update(raw.get("selection", {}))
         flat.update({k: v for k, v in raw.items() if not isinstance(v, dict)})
 
-        valid = {field.name for field in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        valid = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         kwargs = {k: v for k, v in flat.items() if k in valid}
         return cls(**kwargs)
 
@@ -115,3 +130,24 @@ class Void:
     A_boundary_indices: np.ndarray
     alpha_shape: AlphaShapeResult | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class FinderRun:
+    """Diagnostic record from a single run_void_finder call.
+
+    All index arrays that reference A or B points use **original** catalog
+    indices (i.e. into A.positions / B.positions before mass cuts).
+    Sub-array indices (into the mass-cut-filtered positions) are used only
+    internally and are not stored here.
+    """
+
+    params: FinderParameters
+    A_orig_indices: np.ndarray              # original A indices surviving mass cut
+    B_orig_indices: np.ndarray              # original B indices surviving mass cut
+    edges: list[Edge]                       # all B--B edges after veto annotation
+    veto_radii: np.ndarray | None           # per-masked-A veto radius; None if disabled
+    component_labels: np.ndarray            # per-masked-B component label (0-based)
+    veto_boundary_sets: dict[int, np.ndarray]   # A sub-indices before dilation
+    final_boundary_sets: dict[int, np.ndarray]  # A sub-indices after dilation
+    voids: list[Void]

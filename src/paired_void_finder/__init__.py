@@ -1,5 +1,5 @@
 """Paired-catalog barrier void finder."""
 
-from .catalogs import Catalog, FinderParameters, MockCatalog, Void
+from .catalogs import Catalog, FinderParameters, FinderRun, MockCatalog, Void
 
-__all__ = ["Catalog", "FinderParameters", "MockCatalog", "Void"]
+__all__ = ["Catalog", "FinderParameters", "FinderRun", "MockCatalog", "Void"]
