@@ -110,6 +110,45 @@ def radial_profile(
 # ── Private plot utilities ────────────────────────────────────────────────────
 
 
+def _alpha_shape_slice_segments(
+    verts: np.ndarray,
+    faces: np.ndarray,
+    ax_idx: int,
+    plane_val: float,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Line segments where the alpha-shape surface intersects a plane.
+
+    Parameters
+    ----------
+    verts:
+        Vertex positions, shape ``(N, 3)``, in a consistent (unwrapped) frame.
+    faces:
+        External triangular faces, shape ``(M, 3)``, indices into *verts*.
+    ax_idx:
+        Index of the slice axis (0 = x, 1 = y, 2 = z).
+    plane_val:
+        Coordinate value of the slice plane along *ax_idx*.
+
+    Returns
+    -------
+    segments:
+        List of ``(p0, p1)`` pairs, each a shape-``(3,)`` array in 3D.
+        Only triangles that actually cross the plane are included.
+    """
+    segments: list[tuple[np.ndarray, np.ndarray]] = []
+    for tri in faces:
+        p = verts[tri]            # (3, 3)
+        d = p[:, ax_idx] - plane_val
+        crossings: list[np.ndarray] = []
+        for i, j in ((0, 1), (1, 2), (0, 2)):
+            if d[i] * d[j] < 0:  # sign change → edge crosses the plane
+                t = d[i] / (d[i] - d[j])
+                crossings.append(p[i] + t * (p[j] - p[i]))
+        if len(crossings) == 2:
+            segments.append((crossings[0], crossings[1]))
+    return segments
+
+
 def _save_or_show(fig: plt.Figure, outpath: str | Path | None) -> None:
     if outpath is not None:
         fig.savefig(outpath, dpi=150, bbox_inches="tight")
@@ -194,7 +233,9 @@ def plot_slice_truth_vs_found(
 
     A points and B points within a slab of half-thickness ``R_true / 4`` around
     the cut plane are shown.  The A boundary of the best-matched recovered void
-    and its center are overlaid when a match exists.
+    and its center are overlaid when a match exists.  When the void has an
+    accepted alpha shape, its intersection contour with the slice plane is drawn
+    as magenta line segments computed via triangle-plane intersection.
     """
     _AXIS_MAP = {"x": 0, "y": 1, "z": 2}
     if axis not in _AXIS_MAP:
@@ -241,6 +282,21 @@ def plot_slice_truth_vs_found(
                 bdy[mb, other[0]], bdy[mb, other[1]],
                 s=12, c="purple", alpha=0.8, label="A boundary", zorder=4,
             )
+
+        # Alpha-shape slice contour: intersection of the surface with the cut plane.
+        if void.alpha_shape is not None and len(void.alpha_shape.accepted_tetrahedra) > 0:
+            verts_uw = unwrap_points(mock.A.positions[void.A_boundary_indices], center, bs)
+            faces = external_faces_from_tetrahedra(void.alpha_shape.accepted_tetrahedra)
+            if len(faces) > 0:
+                segs = _alpha_shape_slice_segments(verts_uw, faces, ax_idx, center[ax_idx])
+                for k, (q0, q1) in enumerate(segs):
+                    ax.plot(
+                        [q0[other[0]], q1[other[0]]],
+                        [q0[other[1]], q1[other[1]]],
+                        color="magenta", linewidth=1.2, alpha=0.85,
+                        label="alpha-shape slice" if k == 0 else "",
+                    )
+
         ax.scatter(
             void.center[other[0]], void.center[other[1]],
             marker="*", s=150, c="green", zorder=5, label="recovered center",

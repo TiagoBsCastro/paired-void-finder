@@ -1,0 +1,2 @@
+true_id,void_id,center_error,radius_error,volume_error,center_x,center_y,center_z,R_eff,volume,N_B,N_A_boundary,alpha_tetrahedra_total,alpha_tetrahedra_accepted,alpha_fraction,component_id
+0,0,0.2919,-0.7548,-0.9853,50.5577,47.2257,46.6587,3.6777,208.3579,432,92,310,42,0.1355,0
