@@ -227,9 +227,9 @@ def plot_xy_projection(
             else:
                 ax.scatter(v.center[0], v.center[1], marker="+", s=80, c="red",
                            zorder=5, label="unmatched/FP" if i == first_unmatched else "")
+    ax.set_aspect("equal")
     ax.set_xlim(0, bs)
     ax.set_ylim(0, bs)
-    ax.set_aspect("equal")
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_title("XY projection")
@@ -276,9 +276,9 @@ def plot_all_void_centers_overview(
             ax.scatter(v.center[0], v.center[1], marker="+", s=80, c="red",
                        zorder=5, label="unmatched/FP" if i == first_u else "")
 
+    ax.set_aspect("equal")
     ax.set_xlim(0, bs)
     ax.set_ylim(0, bs)
-    ax.set_aspect("equal")
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     n_true = len(mock.true_void_radii)
@@ -392,9 +392,9 @@ def plot_slice_truth_vs_found(
             marker="*", s=150, c="green", zorder=5, label="recovered center",
         )
 
+    ax.set_aspect("equal")
     ax.set_xlim(0, bs)
     ax.set_ylim(0, bs)
-    ax.set_aspect("equal")
     ax.set_xlabel(ax_names[other[0]])
     ax.set_ylabel(ax_names[other[1]])
     ax.set_title(
@@ -543,9 +543,9 @@ def plot_recovered_void_slice(
         marker="*", s=150, c="green", zorder=5, label="recovered center",
     )
 
+    ax.set_aspect("equal")
     ax.set_xlim(0, bs)
     ax.set_ylim(0, bs)
-    ax.set_aspect("equal")
     ax.set_xlabel(ax_names[other[0]])
     ax.set_ylabel(ax_names[other[1]])
     match_label = (f"matched true {matched_true_id}" if matched_true_id is not None
