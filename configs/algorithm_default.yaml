@@ -16,7 +16,7 @@ boundary:
   b_grow: 0.5
 
 alpha_shape:
-  lambda_alpha: 10.0
+  lambda_alpha: 5.0
 
 selection:
   N_B_min: 5

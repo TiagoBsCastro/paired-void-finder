@@ -154,15 +154,10 @@ Required / standard flags:
 | `mock_used.yaml` | Final mock config used (incl. generated centres) |
 | `all_voids_overview_xy.png` | XY overview of all true/recovered voids with labels |
 | `xy_projection.png` | XY scatter of A/B + true circles + recovered centres |
-| `slice_z_true_{N:03d}.png` | Per-hole 2D slice at the true centre; shows matched reconstruction if available |
-| `3d_truth_recovered_true_{N:03d}.png` | Per-hole 3D alpha-shape vs true sphere |
-| `radial_profile_true_{N:03d}.png` | Per-hole radial A/B density profiles |
-| `radial_profile_normalized_true_{N:03d}.png` | Same, normalised by mean density |
-| `slice_z_void_{N:03d}.png` | Per recovered void, slab at the recovered centre; always shows reconstruction |
-| `slice_z.png` | Backward-compatible alias → `slice_z_true_000.png` |
-| `3d_truth_recovered.png` | Backward-compatible alias → `3d_truth_recovered_true_000.png` |
-| `radial_profile.png` | Backward-compatible alias → `radial_profile_true_000.png` |
-| `radial_profile_normalized.png` | Backward-compatible alias → `radial_profile_normalized_true_000.png` |
+| `slice_z_{N:03d}.png` | Per recovered void, slab at the recovered centre; always shows alpha-shape, R_eff, and true sphere intersections |
+| `3d_truth_recovered_{N:03d}.png` | Per-hole 3D alpha-shape vs true sphere |
+| `radial_profile_{N:03d}.png` | Per-hole radial A/B density profiles |
+| `radial_profile_normalized_{N:03d}.png` | Same, normalised by mean density |
 | `component_size_dist.png` | B component size histogram |
 | `boundary_size_dist.png` | A boundary size by pipeline stage |
 | `alpha_diagnostics.png` | Alpha-shape tetrahedra counts and acceptance fraction |
