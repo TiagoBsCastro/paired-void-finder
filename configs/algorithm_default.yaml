@@ -11,7 +11,7 @@ veto:
   enable_veto: true
 
 boundary:
-  boundary_mode: veto
+  boundary_mode: hybrid
   b_shell: 1.5
   b_grow: 0.5
 

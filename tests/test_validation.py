@@ -1,4 +1,4 @@
-"""Tests for validate_against_mock: periodic matching, close-pair, one-to-one."""
+"""Tests for validate_against_mock: periodic matching, close-pair, one-to-one, duplicates."""
 
 from __future__ import annotations
 
@@ -49,12 +49,14 @@ def test_validate_uses_periodic_distance():
     summary = validate_against_mock([synthetic_void], mock)
 
     # With periodic distance: d([98,50,50], [2,50,50]) = 4 < 10 → matched.
-    assert summary.false_positive_count == 0, (
-        "Periodic matching failed: void at x=98 was classified as a false positive "
-        "when it should match the true sphere at x=2 via the periodic boundary."
-    )
+    assert summary.n_matched == 1
+    assert summary.n_missed == 0
+    assert summary.n_duplicate_matches == 0
+    assert summary.false_positive_count == 0
     assert summary.center_errors.size == 1
     assert summary.center_errors[0] == pytest.approx(4.0 / 10.0, rel=1e-6)
+    assert summary.matched_true_indices[0] == 0
+    assert summary.matched_void_indices[0] == 0
 
 
 def test_validate_close_pair_both_found():
@@ -74,20 +76,18 @@ def test_validate_close_pair_both_found():
     void1 = _make_void(1, [75.0, 50.0, 50.0], radius=10.0)
     summary = validate_against_mock([void0, void1], mock)
 
+    assert summary.n_matched == 2
+    assert summary.n_missed == 0
+    assert summary.n_duplicate_matches == 0
     assert summary.false_positive_count == 0
     assert summary.center_errors.size == 2
     assert np.all(summary.center_errors == pytest.approx(0.0, abs=1e-10))
+    # Each void matches a distinct true sphere.
+    assert len(set(summary.matched_true_indices.tolist())) == 2
 
 
 def test_validate_one_to_one_matching():
-    """Three true spheres: each recovered void matches a distinct true sphere.
-
-    validate_against_mock's nearest-center matching is many-to-one by design,
-    so this test verifies the RECOVERED voids—each placed at a unique true
-    sphere—do not accidentally double-count the same sphere.
-    """
-    from paired_void_finder.periodic import periodic_distance
-
+    """Three true spheres: one-to-one LSA assigns each recovered void to a distinct sphere."""
     centers = np.array([[20.0, 20.0, 50.0], [80.0, 50.0, 20.0], [50.0, 80.0, 80.0]])
     radii = np.array([10.0, 10.0, 10.0])
     mock = make_swiss_cheese_mock(
@@ -103,15 +103,43 @@ def test_validate_one_to_one_matching():
     voids = [_make_void(i, c.tolist(), r) for i, (c, r) in enumerate(zip(centers, radii))]
     summary = validate_against_mock(voids, mock)
 
+    assert summary.n_matched == 3
+    assert summary.n_missed == 0
+    assert summary.n_duplicate_matches == 0
     assert summary.false_positive_count == 0
     assert summary.center_errors.size == 3
+    assert np.all(summary.center_errors == pytest.approx(0.0, abs=1e-10))
+    # All three true spheres are covered by distinct recovered voids.
+    assert sorted(summary.matched_true_indices.tolist()) == [0, 1, 2]
 
-    # Each void should map to a DIFFERENT true sphere.
-    matched_true: set[int] = set()
-    for v in voids:
-        d = periodic_distance(centers, v.center, mock.A.box_size)
-        matched_true.add(int(np.argmin(d)))
-    assert len(matched_true) == 3, "Recovered voids did not each match a distinct true sphere"
+
+def test_validate_duplicate_detection():
+    """One true sphere, two recovered voids both inside it: one matched, one duplicate.
+
+    The Hungarian algorithm assigns the closer void (void0 at exact center) to
+    the true sphere.  void1 at d=2 < R is unmatched by the one-to-one assignment
+    but is inside the sphere, so it is counted as a duplicate match, not a
+    false positive.
+    """
+    mock = make_swiss_cheese_mock(
+        box_size=100.0,
+        n_points=1000,
+        void_centers=np.array([[50.0, 50.0, 50.0]]),
+        void_radii=np.array([10.0]),
+        mode="geometry",
+        seed=0,
+    )
+    void0 = _make_void(0, [50.0, 50.0, 50.0], radius=10.0)  # exact match, d=0
+    void1 = _make_void(1, [52.0, 50.0, 50.0], radius=10.0)  # d=2 < R, should be duplicate
+    summary = validate_against_mock([void0, void1], mock)
+
+    assert summary.n_matched == 1
+    assert summary.n_missed == 0
+    assert summary.n_duplicate_matches == 1
+    assert summary.false_positive_count == 0
+    # The better match (void0) should be the one assigned.
+    assert summary.matched_void_indices[0] == 0
+    assert summary.matched_true_indices[0] == 0
 
 
 def test_validate_periodic_boundary_end_to_end():

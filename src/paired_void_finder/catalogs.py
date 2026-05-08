@@ -59,7 +59,7 @@ class FinderParameters:
     #   "veto"   – A points that vetoed inter-component B--B links (original behaviour)
     #   "shell"  – A points within b_shell * mean_A_spacing of any B point in the component
     #   "hybrid" – veto first; fall back to shell when |veto boundary| < N_A_min
-    boundary_mode: str = "veto"
+    boundary_mode: str = "hybrid"
     b_shell: float = 1.5
     b_grow: float = 0.5
     lambda_alpha: float = 2.0
@@ -148,6 +148,8 @@ class FinderRun:
     edges: list[Edge]                       # all B--B edges after veto annotation
     veto_radii: np.ndarray | None           # per-masked-A veto radius; None if disabled
     component_labels: np.ndarray            # per-masked-B component label (0-based)
-    veto_boundary_sets: dict[int, np.ndarray]   # A sub-indices before dilation
-    final_boundary_sets: dict[int, np.ndarray]  # A sub-indices after dilation
+    veto_boundary_sets: dict[int, np.ndarray]    # A sub-indices from veto mechanism
+    shell_boundary_sets: dict[int, np.ndarray]   # A sub-indices from shell mechanism
+    selected_boundary_sets: dict[int, np.ndarray]  # chosen boundary before dilation
+    final_boundary_sets: dict[int, np.ndarray]   # chosen boundary after dilation
     voids: list[Void]

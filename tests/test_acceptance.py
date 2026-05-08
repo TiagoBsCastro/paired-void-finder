@@ -36,7 +36,8 @@ _DEFAULTS = FinderParameters()
 
 
 def test_one_sphere_center_error_below_threshold():
-    """Geometry mock: one void recovered with center error < 0.2 R_true."""
+    """Geometry mock: one void recovered with center error < 0.2 R_true,
+    radius within ±50 %, and volume within a factor of 4."""
     mock = make_swiss_cheese_mock(
         box_size=100.0,
         n_points=10000,
@@ -49,13 +50,21 @@ def test_one_sphere_center_error_below_threshold():
     # the sphere) drives a large mean_B_spacing and therefore a large l_BB that
     # fragments the sphere into many small components; a larger R_alpha ensures
     # the alpha shape fills the sphere interior rather than just a thin shell.
-    params = replace(_DEFAULTS, lambda_alpha=3.0)
+    # boundary_mode="shell" is explicit: use the A shell around B members to form
+    # the boundary, giving a clean sphere surface without relying on veto records.
+    params = replace(_DEFAULTS, lambda_alpha=3.0, boundary_mode="shell")
     voids = run_void_finder(mock.A, mock.B, params)
     assert len(voids) >= 1, f"Expected at least 1 void, got {len(voids)}"
     summary = validate_against_mock(voids, mock)
     assert summary.center_errors.size >= 1, "No recovered void matched the true sphere"
     assert summary.center_errors[0] < 0.2, (
         f"Center error {summary.center_errors[0]:.3f} >= 0.2 R_true"
+    )
+    assert abs(summary.radius_errors[0]) < 0.1, (
+        f"Radius error {summary.radius_errors[0]:.4f} outside ±10%"
+    )
+    assert abs(summary.volume_errors[0]) < 0.3, (
+        f"Volume error {summary.volume_errors[0]:.4f} outside ±30%"
     )
 
 
@@ -78,14 +87,13 @@ def test_multi_sphere_recovers_approximately_correct_count():
 
 
 def test_veto_reduces_over_merging():
-    """Close-pair mock: enabling the veto recovers more distinct voids than disabling it.
+    """Close-pair mock: enabling the veto creates more B components (less over-merging).
 
-    Two spheres with a gap of 6 units are well within the B--B linking length
-    (~27 units for this point density).  Without the A-barrier veto, B points
-    from both spheres end up in a single connected component that has no
-    boundary and therefore yields no recoverable void.  With veto enabled, the
-    A points in the gap intercept the inter-sphere links, leaving the interior
-    B clusters with non-empty A boundaries.
+    Without veto the huge B--B linking length connects all interior B points into
+    one large component.  With veto enabled, A points in the inter-sphere gap
+    intercept many B--B links, fragmenting the sphere surfaces into singletons
+    and yielding significantly more components overall.  A higher component count
+    is a direct measure of reduced over-merging.
     """
     centers = np.array([[37.0, 50.0, 50.0], [63.0, 50.0, 50.0]])
     radii = np.array([10.0, 10.0])
@@ -97,11 +105,17 @@ def test_veto_reduces_over_merging():
         mode="geometry",
         seed=1234,
     )
-    n_no_veto = len(run_void_finder(mock.A, mock.B, replace(_DEFAULTS, enable_veto=False)))
-    n_veto = len(run_void_finder(mock.A, mock.B, replace(_DEFAULTS, enable_veto=True)))
-    assert n_veto > n_no_veto, (
-        f"Expected veto to reduce over-merging (more voids): "
-        f"veto={n_veto}, no_veto={n_no_veto}"
+    _, run_no_veto = run_void_finder(  # type: ignore[misc]
+        mock.A, mock.B, replace(_DEFAULTS, enable_veto=False), return_diagnostics=True
+    )
+    _, run_veto = run_void_finder(  # type: ignore[misc]
+        mock.A, mock.B, replace(_DEFAULTS, enable_veto=True), return_diagnostics=True
+    )
+    n_comps_no_veto = len(np.unique(run_no_veto.component_labels))
+    n_comps_veto = len(np.unique(run_veto.component_labels))
+    assert n_comps_veto > n_comps_no_veto, (
+        f"Expected veto to fragment B into more components (less over-merging): "
+        f"veto={n_comps_veto}, no_veto={n_comps_no_veto}"
     )
 
 

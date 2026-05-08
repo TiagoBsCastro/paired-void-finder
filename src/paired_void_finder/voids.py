@@ -43,6 +43,14 @@ def run_void_finder(
     if B.masses is not None:
         B_mask = B.masses >= params.M_B_min
 
+    # Guard: veto boundary mode requires the veto mechanism to be enabled.
+    if not params.enable_veto and params.boundary_mode == "veto":
+        raise ValueError(
+            "boundary_mode='veto' requires enable_veto=True — there are no rejected "
+            "edges to build veto boundaries from when the veto is disabled. "
+            "Use boundary_mode='shell' or 'hybrid' when enable_veto=False."
+        )
+
     # Preserve mapping from sub-array index → original catalog index.
     A_orig_indices = np.flatnonzero(A_mask)
     B_orig_indices = np.flatnonzero(B_mask)
@@ -65,21 +73,27 @@ def run_void_finder(
     # Build raw (pre-dilation) boundary sets according to boundary_mode.
     mode = params.boundary_mode
     l_shell = params.b_shell * dA
-    if mode == "veto":
-        raw_boundaries = veto_boundaries_by_component(edges, labels)
-    elif mode == "shell":
-        raw_boundaries = shell_boundaries_by_component(B_pos, A_pos, labels, box_size, l_shell)
-    else:  # hybrid
+    veto_bs: dict[int, np.ndarray] = {}
+    shell_bs: dict[int, np.ndarray] = {}
+
+    if mode in ("veto", "hybrid"):
         veto_bs = veto_boundaries_by_component(edges, labels)
+    if mode in ("shell", "hybrid"):
         shell_bs = shell_boundaries_by_component(B_pos, A_pos, labels, box_size, l_shell)
-        raw_boundaries = {
+
+    if mode == "veto":
+        selected_bs = veto_bs
+    elif mode == "shell":
+        selected_bs = shell_bs
+    else:  # hybrid: prefer veto when it has enough points, else fall back to shell
+        selected_bs = {
             c: veto_bs[c] if len(veto_bs[c]) >= params.N_A_min else shell_bs[c]
             for c in veto_bs
         }
 
-    final_boundaries = raw_boundaries
+    final_boundaries = selected_bs
     if params.b_grow > 0:
-        final_boundaries = dilate_boundaries(A_pos, raw_boundaries, box_size, params.b_grow * dA)
+        final_boundaries = dilate_boundaries(A_pos, selected_bs, box_size, params.b_grow * dA)
 
     voids: list[Void] = []
     R_alpha = params.lambda_alpha * dA
@@ -124,6 +138,13 @@ def run_void_finder(
     if not return_diagnostics:
         return voids
 
+    # When returning diagnostics, also compute the boundary set that wasn't needed
+    # by the main pipeline path so all four fields are always populated.
+    if mode == "veto":
+        shell_bs = shell_boundaries_by_component(B_pos, A_pos, labels, box_size, l_shell)
+    elif mode == "shell":
+        veto_bs = veto_boundaries_by_component(edges, labels)
+
     run = FinderRun(
         params=params,
         A_orig_indices=A_orig_indices,
@@ -131,7 +152,9 @@ def run_void_finder(
         edges=edges,
         veto_radii=veto_radii,
         component_labels=labels,
-        veto_boundary_sets=raw_boundaries,
+        veto_boundary_sets=veto_bs,
+        shell_boundary_sets=shell_bs,
+        selected_boundary_sets=selected_bs,
         final_boundary_sets=final_boundaries,
         voids=voids,
     )
