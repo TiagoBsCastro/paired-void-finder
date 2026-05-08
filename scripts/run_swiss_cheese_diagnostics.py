@@ -268,6 +268,10 @@ def main() -> None:
     plot_radial_profile(
         mock, voids, summary, outpath=outdir / "radial_profile.png", true_id=0
     )
+    plot_radial_profile(
+        mock, voids, summary, outpath=outdir / "radial_profile_normalized.png",
+        true_id=0, normalize_by_mean=True,
+    )
     plot_component_size_distribution(run, outpath=outdir / "component_size_dist.png")
     plot_boundary_size_distribution(run, outpath=outdir / "boundary_size_dist.png")
     plot_alpha_diagnostics(voids, summary, outpath=outdir / "alpha_diagnostics.png")

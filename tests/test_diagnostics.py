@@ -174,6 +174,7 @@ def test_diagnostic_script_creates_outputs(tmp_path):
         "slice_z.png",
         "3d_truth_recovered.png",
         "radial_profile.png",
+        "radial_profile_normalized.png",
         "component_size_dist.png",
         "boundary_size_dist.png",
         "alpha_diagnostics.png",
