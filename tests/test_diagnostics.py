@@ -22,6 +22,7 @@ from paired_void_finder.diagnostics import (
     plot_boundary_size_distribution,
     plot_component_size_distribution,
     plot_radial_profile,
+    plot_recovered_void_slice,
     plot_slice_truth_vs_found,
     plot_xy_projection,
     radial_profile,
@@ -173,6 +174,16 @@ def _get_smoke_data():
     return _SMOKE_DATA
 
 
+def test_plot_recovered_void_slice_smoke(tmp_path):
+    """plot_recovered_void_slice creates a non-empty PNG for void_id=0."""
+    mock, voids, _run, summary = _get_smoke_data()
+    assert len(voids) > 0, "Expected at least one recovered void for smoke test"
+    out = tmp_path / "rv_slice.png"
+    plot_recovered_void_slice(mock, voids, summary, void_id=0, outpath=out)
+    assert out.exists()
+    assert out.stat().st_size > 0
+
+
 def test_diagnostic_script_creates_outputs(tmp_path):
     """Integration test: the script runs and creates all expected output files."""
     mock_cfg = {
@@ -231,6 +242,14 @@ def test_diagnostic_script_creates_outputs(tmp_path):
     ]
     for name in expected_files:
         assert (outdir / name).exists(), f"Missing expected output file: {name}"
+
+    # Check that per-void slice files were created for every recovered void.
+    import numpy as _np
+    cat = _np.load(outdir / "void_catalog.npz")
+    n_rec = len(cat["centers"])
+    for vid in range(n_rec):
+        fname = f"slice_z_void_{vid:03d}.png"
+        assert (outdir / fname).exists(), f"Missing per-void slice: {fname}"
 
     # Check summary.txt is parseable and contains required keys.
     text = (outdir / "summary.txt").read_text()
@@ -355,3 +374,11 @@ def test_diagnostic_script_random_holes(tmp_path):
     # Overview plot must exist.
     assert (outdir / "all_voids_overview_xy.png").exists(), \
         "Missing all_voids_overview_xy.png"
+
+    # Per-void slice files must exist for every recovered void.
+    import numpy as _np2
+    cat = _np2.load(outdir / "void_catalog.npz")
+    n_rec = len(cat["centers"])
+    for vid in range(n_rec):
+        fname = f"slice_z_void_{vid:03d}.png"
+        assert (outdir / fname).exists(), f"Missing per-void slice: {fname}"

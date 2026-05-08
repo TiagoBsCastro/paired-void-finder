@@ -26,10 +26,13 @@ Outputs saved to --outdir
     xy_projection.png           – XY scatter of A/B + true circles + recovered centres
 
   Per-hole plots (one file per true void, zero-padded index):
-    slice_z_true_{N:03d}.png
+    slice_z_true_{N:03d}.png      – slab at true center; shows match if available
     3d_truth_recovered_true_{N:03d}.png
     radial_profile_true_{N:03d}.png
     radial_profile_normalized_true_{N:03d}.png
+
+  Per-void plots (one file per recovered void, zero-padded index):
+    slice_z_void_{N:03d}.png      – slab at recovered center; always shows reconstruction
 
   Legacy aliases (copies of the true_id=0 files, for backward compatibility):
     slice_z.png
@@ -193,6 +196,7 @@ def main() -> None:
         plot_boundary_size_distribution,
         plot_component_size_distribution,
         plot_radial_profile,
+        plot_recovered_void_slice,
         plot_slice_truth_vs_found,
         plot_xy_projection,
     )
@@ -388,6 +392,15 @@ def main() -> None:
     plot_component_size_distribution(run, outpath=outdir / "component_size_dist.png")
     plot_boundary_size_distribution(run, outpath=outdir / "boundary_size_dist.png")
     plot_alpha_diagnostics(voids, summary, outpath=outdir / "alpha_diagnostics.png")
+
+    # Per-void plots: one file per recovered void (always produced, even unmatched).
+    for vid in range(len(voids)):
+        plot_recovered_void_slice(
+            mock, voids, summary,
+            void_id=vid,
+            outpath=outdir / f"slice_z_void_{vid:03d}.png",
+            axis="z",
+        )
 
     print(f"Outputs saved to {outdir}")
 

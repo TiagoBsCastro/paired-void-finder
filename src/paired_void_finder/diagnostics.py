@@ -406,6 +406,159 @@ def plot_slice_truth_vs_found(
     _save_or_show(fig, outpath)
 
 
+def plot_recovered_void_slice(
+    mock: MockCatalog,
+    voids: list[Void],
+    summary: ValidationSummary,
+    void_id: int,
+    outpath: str | Path | None = None,
+    axis: str = "z",
+) -> None:
+    """2D slab slice through the center of **recovered** void *void_id*.
+
+    Unlike :func:`plot_slice_truth_vs_found`, the slab is centred on the
+    *recovered* void center rather than a true sphere center.  This means a
+    plot is always produced for every recovered void, regardless of whether
+    it was matched to a true sphere.
+
+    Overlays drawn:
+
+    * A and B points within a slab of half-thickness ``max(R_eff / 4, 1.0)``.
+    * **Alpha-shape slice** — purple solid segments from the alpha-shape
+      surface intersected with the cutting plane.
+    * **A boundary points** — purple scatter in the slab.
+    * **Recovered R_eff circle** — purple dashed circle at the recovered center.
+    * **Recovered center** — green star.
+    * **True sphere intersections** — for each true sphere whose center is
+      within ``R_true`` of the slice plane (in periodic distance), a circle of
+      the appropriate cross-sectional radius is drawn.  The true sphere matched
+      to this void (if any) is drawn as a solid green circle; all others are
+      drawn as dashed gray circles.
+
+    Parameters
+    ----------
+    mock:
+        Swiss-cheese mock catalog (provides A/B positions and truth).
+    voids:
+        List of all recovered :class:`~.catalogs.Void` objects.
+    summary:
+        Matching summary from :func:`match_voids_to_truth`.
+    void_id:
+        Index into *voids* identifying the recovered void to plot.
+    outpath:
+        Save path.  If ``None``, displays interactively.
+    axis:
+        Slice axis — ``"x"``, ``"y"``, or ``"z"``.
+    """
+    _AXIS_MAP = {"x": 0, "y": 1, "z": 2}
+    if axis not in _AXIS_MAP:
+        raise ValueError(f"axis must be 'x', 'y', or 'z', got {axis!r}")
+    ax_idx = _AXIS_MAP[axis]
+    other = [i for i in range(3) if i != ax_idx]
+    ax_names = ["x", "y", "z"]
+
+    void = voids[void_id]
+    center = void.center
+    r_eff = void.effective_radius
+    slab_half = max(r_eff / 4.0, 1.0)
+    bs = mock.A.box_size
+    z_plane = center[ax_idx]
+
+    # Determine if this void_id is matched to a true sphere.
+    matched_true_id: int | None = None
+    hits = np.where(summary.matched_void_indices == void_id)[0]
+    if len(hits) > 0:
+        matched_true_id = int(summary.matched_true_indices[hits[0]])
+
+    def _in_slab(pos: np.ndarray) -> np.ndarray:
+        dz = pos[:, ax_idx] - z_plane
+        dz = dz - bs * np.rint(dz / bs)
+        return np.abs(dz) < slab_half
+
+    mask_A = _in_slab(mock.A.positions)
+    mask_B = _in_slab(mock.B.positions)
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.scatter(
+        mock.A.positions[mask_A, other[0]], mock.A.positions[mask_A, other[1]],
+        s=2, c="steelblue", alpha=0.4, label="A", rasterized=True,
+    )
+    ax.scatter(
+        mock.B.positions[mask_B, other[0]], mock.B.positions[mask_B, other[1]],
+        s=4, c="orange", alpha=0.6, label="B", rasterized=True,
+    )
+
+    # True sphere intersections with the slice plane.
+    theta = np.linspace(0, 2 * np.pi, 300)
+    for tid, (tc, tr) in enumerate(zip(mock.true_void_centers, mock.true_void_radii)):
+        dz = tc[ax_idx] - z_plane
+        dz = dz - bs * np.rint(dz / bs)  # periodic wrap
+        if abs(dz) < tr:
+            r_cross = float(np.sqrt(tr**2 - dz**2))
+            is_matched = (tid == matched_true_id)
+            color = "green" if is_matched else "gray"
+            ls = "-" if is_matched else "--"
+            lw = 1.8 if is_matched else 1.0
+            lbl = f"true void {tid} (matched)" if is_matched else f"true void {tid}"
+            ax.plot(
+                tc[other[0]] + r_cross * np.cos(theta),
+                tc[other[1]] + r_cross * np.sin(theta),
+                color=color, linestyle=ls, linewidth=lw, label=lbl,
+            )
+
+    # A boundary points in slab.
+    bdy = mock.A.positions[void.A_boundary_indices]
+    mb = _in_slab(bdy)
+    if mb.any():
+        ax.scatter(
+            bdy[mb, other[0]], bdy[mb, other[1]],
+            s=12, c="purple", alpha=0.8, label="A boundary points", zorder=4,
+        )
+
+    # Alpha-shape slice.
+    n_alpha_segs = 0
+    if void.alpha_shape is not None and len(void.alpha_shape.accepted_tetrahedra) > 0:
+        verts_uw = unwrap_points(mock.A.positions[void.A_boundary_indices], center, bs)
+        faces = external_faces_from_tetrahedra(void.alpha_shape.accepted_tetrahedra)
+        if len(faces) > 0:
+            segs = triangle_plane_intersections(verts_uw, faces, ax_idx, z_plane)
+            n_alpha_segs = len(segs)
+            for k, seg in enumerate(segs):
+                ax.plot(
+                    [seg[0, other[0]], seg[1, other[0]]],
+                    [seg[0, other[1]], seg[1, other[1]]],
+                    color="purple", linewidth=1.2,
+                    label="alpha-shape slice" if k == 0 else "",
+                )
+
+    # Recovered R_eff circle and center.
+    ax.plot(
+        center[other[0]] + r_eff * np.cos(theta),
+        center[other[1]] + r_eff * np.sin(theta),
+        color="purple", linestyle="--", linewidth=1.2,
+        label=f"R_eff = {r_eff:.1f}",
+    )
+    ax.scatter(
+        center[other[0]], center[other[1]],
+        marker="*", s=150, c="green", zorder=5, label="recovered center",
+    )
+
+    ax.set_xlim(0, bs)
+    ax.set_ylim(0, bs)
+    ax.set_aspect("equal")
+    ax.set_xlabel(ax_names[other[0]])
+    ax.set_ylabel(ax_names[other[1]])
+    match_label = (f"matched true {matched_true_id}" if matched_true_id is not None
+                   else "unmatched")
+    ax.set_title(
+        f"Recovered void {void_id}  |  R_eff={r_eff:.1f}"
+        f"  |  {axis}={z_plane:.1f} ±{slab_half:.1f}"
+        f"  |  {match_label}  |  α-segments: {n_alpha_segs}"
+    )
+    _legend_dedup(ax)
+    _save_or_show(fig, outpath)
+
+
 def plot_3d_truth_and_recovered(
     mock: MockCatalog,
     voids: list[Void],
