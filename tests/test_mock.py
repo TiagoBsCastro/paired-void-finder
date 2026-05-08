@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from paired_void_finder.catalogs import Catalog
 from paired_void_finder.mocks import generate_random_void_spheres, make_swiss_cheese_mock
@@ -117,3 +118,36 @@ def test_generate_random_void_spheres_satisfies_non_overlap():
             assert d >= min_required, (
                 f"Holes {i} and {j} too close: d={d:.3f} < min={min_required:.3f}"
             )
+
+
+def test_generate_random_void_spheres_array_radii():
+    """Array-valued radii are respected: each hole gets its own radius."""
+    radii_in = np.array([5.0, 8.0, 12.0])
+    centers, radii_out = generate_random_void_spheres(
+        n_holes=3,
+        box_size=200.0,
+        radii=radii_in,
+        seed=7,
+    )
+    assert centers.shape == (3, 3)
+    assert radii_out.shape == (3,)
+    np.testing.assert_array_equal(radii_out, radii_in)
+    # Non-overlap must still hold between holes with different radii.
+    for i in range(3):
+        for j in range(i + 1, 3):
+            d = float(periodic_distance(centers[i : i + 1], centers[j], 200.0)[0])
+            assert d >= 2.0 * (radii_out[i] + radii_out[j])
+
+
+def test_generate_random_void_spheres_impossible_packing_raises():
+    """RuntimeError is raised when holes cannot be packed into the box."""
+    with pytest.raises(RuntimeError, match="Could not place hole"):
+        # 10 spheres of radius 40 cannot fit into a box of 100 with factor 2.0.
+        generate_random_void_spheres(
+            n_holes=10,
+            box_size=100.0,
+            radii=40.0,
+            seed=0,
+            min_separation_factor=2.0,
+            max_attempts=50,
+        )

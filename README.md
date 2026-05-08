@@ -107,17 +107,26 @@ void_centers:
 void_radii: [12.0, 12.0]
 ```
 
-Generate a mock NPZ:
+### `scripts/make_mock.py` — generate a mock NPZ
+
 ```bash
 python scripts/make_mock.py --config configs/mock_geometry.yaml --out mock_geometry.npz
 ```
 
-CLI flags (`--box-size`, `--n-points`, `--seed`, etc.) override YAML values when
-provided.
+The following CLI flags override the corresponding YAML keys:
+
+| Flag | YAML key | Description |
+|------|----------|-------------|
+| `--box-size` | `box_size` | Cubic box side length |
+| `--n-points` | `n_points` | Total tracer count (split between A and B) |
+| `--seed` | `seed` | RNG seed |
+| `--mode` | `mode` | Mock mode: `geometry`, `veto`, or `hard` |
 
 ## Swiss-cheese diagnostics script
 
-Run a full diagnostic pass on a mock (generates plots, NPZ outputs, and CSV):
+### `scripts/run_swiss_cheese_diagnostics.py` — run and diagnose
+
+Run a full diagnostic pass on a YAML-defined mock:
 
 ```bash
 python scripts/run_swiss_cheese_diagnostics.py \
@@ -126,7 +135,18 @@ python scripts/run_swiss_cheese_diagnostics.py \
     --outdir results/geometry_run
 ```
 
-Use randomly generated holes instead of YAML-defined positions (5-hole example):
+Required / standard flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--mock-config` | (required) | YAML file describing the mock |
+| `--finder-config` | `configs/algorithm_default.yaml` | YAML file with `FinderParameters` |
+| `--outdir` | `.` | Output directory (created if absent) |
+
+### Random hole generation
+
+Pass `--random-holes` (or just `--n-holes`) to override the `void_centers` and
+`void_radii` from the YAML with randomly placed holes:
 
 ```bash
 python scripts/run_swiss_cheese_diagnostics.py \
@@ -137,21 +157,21 @@ python scripts/run_swiss_cheese_diagnostics.py \
     --min-separation-factor 2.5 --seed 42
 ```
 
-When `--random-holes` or `--n-holes` is used, the script calls
-`generate_random_void_spheres` to place holes that satisfy the periodic
-non-overlap condition (centre-to-centre separation ≥ `min_separation_factor × (R_i + R_j)`).
-The final mock configuration (including the generated centres) is always saved to
-`<outdir>/mock_used.yaml` for reproducibility.
-
-Available random-hole flags:
+Holes are placed with rejection sampling in a periodic box.  The
+non-overlap condition is `d(i,j) >= min_separation_factor * (R_i + R_j)`;
+at the default of 2.0 the surface-to-surface gap equals one diameter for
+equal-radius holes.
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--random-holes` | — | Enable random hole generation (overrides YAML `void_centers`). |
 | `--n-holes N` | — | Number of holes (required with `--random-holes`). |
-| `--hole-radius R` | — | Radius for all holes (required with `--random-holes`). |
-| `--min-separation-factor F` | 2.0 | Min centre separation as multiple of `R_i + R_j`. |
+| `--hole-radius R` | — | Uniform radius for all holes (required with `--random-holes`). |
+| `--min-separation-factor F` | 2.0 | `d >= F*(R_i+R_j)` non-overlap condition. Gap = `2*(F-1)*R` for equal radii. |
 | `--seed S` | YAML value | RNG seed (overrides YAML `seed`). |
+
+The final mock configuration used (including generated centres) is always saved to
+`<outdir>/mock_used.yaml` for reproducibility.
 
 ## Diagnostics
 

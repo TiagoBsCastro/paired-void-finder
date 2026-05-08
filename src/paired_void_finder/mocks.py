@@ -35,8 +35,14 @@ def generate_random_void_spheres(
         RNG seed for reproducibility.  ``None`` uses an unpredictable seed.
     min_separation_factor:
         Minimum centre-to-centre separation expressed as a multiple of the
-        sum of the two radii being compared.  Default 2.0 prevents overlap
-        and leaves a gap equal to one radius between adjacent sphere surfaces.
+        sum of the two radii.  The condition enforced is::
+
+            d(i, j) >= min_separation_factor * (R_i + R_j)
+
+        For two equal-radius holes the surface-to-surface gap is
+        ``(min_separation_factor - 1) * 2 * R``.  At the default of 2.0
+        the gap equals 2 R (one diameter).  Use a value closer to 1.0 for
+        tighter packing — e.g. 1.2 gives a gap of ≈ 0.4 R.
     max_attempts:
         Maximum number of random candidates tried per hole before raising.
 
