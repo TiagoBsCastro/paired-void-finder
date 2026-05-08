@@ -1,0 +1,23 @@
+mass_cuts:
+  M_A_min: 0.0
+  M_B_min: 0.0
+
+graph:
+  b_BB: 1.5
+
+veto:
+  eta: 0.5
+  N_veto: 8
+  enable_veto: true
+
+boundary:
+  use_veto_halos: true
+  b_grow: 0.5
+
+alpha_shape:
+  lambda_alpha: 2.0
+
+selection:
+  N_B_min: 5
+  N_A_min: 12
+  R_min: 0.0

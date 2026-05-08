@@ -1,0 +1,7 @@
+box_size: 100.0
+n_points: 30000
+mode: geometry
+seed: 1234
+void_centers:
+  - [50.0, 50.0, 50.0]
+void_radii: [15.0]
