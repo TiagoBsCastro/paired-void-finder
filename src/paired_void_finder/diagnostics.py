@@ -237,6 +237,59 @@ def plot_xy_projection(
     _save_or_show(fig, outpath)
 
 
+def plot_all_void_centers_overview(
+    mock: MockCatalog,
+    voids: list[Void],
+    summary: ValidationSummary,
+    outpath: str | Path | None = None,
+) -> None:
+    """XY overview of all true sphere outlines and all recovered void centers.
+
+    True spheres are drawn as dashed circles, each labelled with their
+    ``true_id`` at the true center.  Recovered void centers are coloured
+    green (matched) or red (unmatched / false positive).  Unlike
+    :func:`plot_xy_projection` this function omits the individual A/B point
+    scatter so the void geometry is the focus.
+    """
+    bs = mock.A.box_size
+    fig, ax = plt.subplots(figsize=(7, 7))
+    theta = np.linspace(0, 2 * np.pi, 300)
+
+    matched_set = set(summary.matched_void_indices.tolist())
+
+    # True spheres — dashed circles with true_id labels.
+    for tid, (c, r) in enumerate(zip(mock.true_void_centers, mock.true_void_radii)):
+        circle = plt.Circle((c[0], c[1]), r, fill=False, color="green",
+                             linewidth=1.5, linestyle="--")
+        ax.add_patch(circle)
+        ax.text(c[0], c[1], str(tid), ha="center", va="center",
+                fontsize=9, color="green", fontweight="bold")
+
+    # Recovered void centers.
+    first_m = next((i for i in range(len(voids)) if i in matched_set), -1)
+    first_u = next((i for i in range(len(voids)) if i not in matched_set), -1)
+    for i, v in enumerate(voids):
+        if i in matched_set:
+            ax.scatter(v.center[0], v.center[1], marker="x", s=80, c="green",
+                       zorder=5, label="matched" if i == first_m else "")
+        else:
+            ax.scatter(v.center[0], v.center[1], marker="+", s=80, c="red",
+                       zorder=5, label="unmatched/FP" if i == first_u else "")
+
+    ax.set_xlim(0, bs)
+    ax.set_ylim(0, bs)
+    ax.set_aspect("equal")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    n_true = len(mock.true_void_radii)
+    ax.set_title(
+        f"All voids overview  |  {n_true} true,  {len(voids)} recovered"
+        f"  ({summary.n_matched} matched,  {summary.n_missed} missed)"
+    )
+    _legend_dedup(ax)
+    _save_or_show(fig, outpath)
+
+
 def plot_slice_truth_vs_found(
     mock: MockCatalog,
     voids: list[Void],
@@ -345,8 +398,9 @@ def plot_slice_truth_vs_found(
     ax.set_xlabel(ax_names[other[0]])
     ax.set_ylabel(ax_names[other[1]])
     ax.set_title(
-        f"Slice at {axis}={center[ax_idx]:.1f} (±{slab_half:.1f})"
-        f" | alpha-shape segments: {n_alpha_segs}"
+        f"Slice  true void {true_id}  |  R={radius:.1f}"
+        f"  |  {axis}={center[ax_idx]:.1f} ±{slab_half:.1f}"
+        f"  |  α-segments: {n_alpha_segs}"
     )
     _legend_dedup(ax)
     _save_or_show(fig, outpath)
@@ -413,7 +467,11 @@ def plot_3d_truth_and_recovered(
     ax3d.set_xlabel("x")
     ax3d.set_ylabel("y")
     ax3d.set_zlabel("z")
-    ax3d.set_title(f"True void {true_id} vs recovered boundary")
+    cx, cy, cz = center
+    ax3d.set_title(
+        f"True void {true_id}  |  R={radius:.1f}  |  "
+        f"c=({cx:.1f}, {cy:.1f}, {cz:.1f})"
+    )
     ax3d.legend(loc="upper left", fontsize=8)
     _save_or_show(fig, outpath)
 
@@ -464,7 +522,11 @@ def plot_radial_profile(
     ax.set_xlabel("r")
     ylabel = "n / mean_n" if normalize_by_mean else "n / V_shell"
     ax.set_ylabel(ylabel)
-    ax.set_title(f"Radial profiles around true void {true_id}")
+    cx, cy, cz = center
+    ax.set_title(
+        f"Radial profiles  |  true void {true_id}  |  R={radius:.1f}"
+        f"  |  c=({cx:.1f}, {cy:.1f}, {cz:.1f})"
+    )
     ax.legend(loc="best", fontsize=8)
     _save_or_show(fig, outpath)
 

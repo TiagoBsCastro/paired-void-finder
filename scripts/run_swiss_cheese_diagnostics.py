@@ -8,16 +8,36 @@ Usage
         --finder-config configs/algorithm_default.yaml \\
         --outdir results/geometry_run
 
+    # Random 5-hole run
+    python scripts/run_swiss_cheese_diagnostics.py \\
+        --mock-config configs/mock_geometry.yaml \\
+        --finder-config configs/algorithm_default.yaml \\
+        --outdir results/random_5_holes \\
+        --random-holes --n-holes 5 --hole-radius 10 --seed 42
+
 Outputs saved to --outdir
 -------------------------
     void_catalog.npz            – recovered void centres, volumes, radii
     run_diagnostics.npz         – edges, labels, boundary sets
     summary.txt                 – human-readable validation summary
     match_table.csv             – per-matched-pair metrics
-    xy_projection.png
+    mock_used.yaml              – final mock config used (includes generated centres)
+    all_voids_overview_xy.png   – XY overview of all true/recovered voids
+    xy_projection.png           – XY scatter of A/B + true circles + recovered centres
+
+  Per-hole plots (one file per true void, zero-padded index):
+    slice_z_true_{N:03d}.png
+    3d_truth_recovered_true_{N:03d}.png
+    radial_profile_true_{N:03d}.png
+    radial_profile_normalized_true_{N:03d}.png
+
+  Legacy aliases (copies of the true_id=0 files, for backward compatibility):
     slice_z.png
     3d_truth_recovered.png
     radial_profile.png
+    radial_profile_normalized.png
+
+  Global pipeline diagnostics:
     component_size_dist.png
     boundary_size_dist.png
     alpha_diagnostics.png
@@ -28,6 +48,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import shutil
 from pathlib import Path
 
 import matplotlib
@@ -167,6 +188,7 @@ def main() -> None:
     from paired_void_finder.diagnostics import (
         match_voids_to_truth,
         plot_3d_truth_and_recovered,
+        plot_all_void_centers_overview,
         plot_alpha_diagnostics,
         plot_boundary_size_distribution,
         plot_component_size_distribution,
@@ -322,19 +344,47 @@ def main() -> None:
 
     # ── Diagnostic plots ──────────────────────────────────────────────────────
     plot_xy_projection(mock, voids, summary, outpath=outdir / "xy_projection.png")
-    plot_slice_truth_vs_found(
-        mock, voids, summary, outpath=outdir / "slice_z.png", true_id=0, axis="z"
+    plot_all_void_centers_overview(
+        mock, voids, summary, outpath=outdir / "all_voids_overview_xy.png"
     )
-    plot_3d_truth_and_recovered(
-        mock, voids, summary, outpath=outdir / "3d_truth_recovered.png", true_id=0
-    )
-    plot_radial_profile(
-        mock, voids, summary, outpath=outdir / "radial_profile.png", true_id=0
-    )
-    plot_radial_profile(
-        mock, voids, summary, outpath=outdir / "radial_profile_normalized.png",
-        true_id=0, normalize_by_mean=True,
-    )
+
+    # Per-hole plots: one file per true void.
+    n_true = len(mock.true_void_radii)
+    for true_id in range(n_true):
+        tid_str = f"true_{true_id:03d}"
+        plot_slice_truth_vs_found(
+            mock, voids, summary,
+            outpath=outdir / f"slice_z_{tid_str}.png",
+            true_id=true_id, axis="z",
+        )
+        plot_3d_truth_and_recovered(
+            mock, voids, summary,
+            outpath=outdir / f"3d_truth_recovered_{tid_str}.png",
+            true_id=true_id,
+        )
+        plot_radial_profile(
+            mock, voids, summary,
+            outpath=outdir / f"radial_profile_{tid_str}.png",
+            true_id=true_id,
+        )
+        plot_radial_profile(
+            mock, voids, summary,
+            outpath=outdir / f"radial_profile_normalized_{tid_str}.png",
+            true_id=true_id, normalize_by_mean=True,
+        )
+
+    # Backward-compatible aliases (copies of the true_id=0 files).
+    if n_true > 0:
+        for src_stem, dst_name in [
+            ("slice_z_true_000",             "slice_z.png"),
+            ("3d_truth_recovered_true_000",  "3d_truth_recovered.png"),
+            ("radial_profile_true_000",      "radial_profile.png"),
+            ("radial_profile_normalized_true_000", "radial_profile_normalized.png"),
+        ]:
+            src = outdir / f"{src_stem}.png"
+            if src.exists():
+                shutil.copy(src, outdir / dst_name)
+
     plot_component_size_distribution(run, outpath=outdir / "component_size_dist.png")
     plot_boundary_size_distribution(run, outpath=outdir / "boundary_size_dist.png")
     plot_alpha_diagnostics(voids, summary, outpath=outdir / "alpha_diagnostics.png")

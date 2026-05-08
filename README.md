@@ -143,6 +143,29 @@ Required / standard flags:
 | `--finder-config` | `configs/algorithm_default.yaml` | YAML file with `FinderParameters` |
 | `--outdir` | `.` | Output directory (created if absent) |
 
+### Outputs
+
+| File | Description |
+|------|-------------|
+| `void_catalog.npz` | Recovered void centres, volumes, radii |
+| `run_diagnostics.npz` | Edges, component labels, boundary sets |
+| `summary.txt` | Human-readable validation summary |
+| `match_table.csv` | Per-matched-pair metrics |
+| `mock_used.yaml` | Final mock config used (incl. generated centres) |
+| `all_voids_overview_xy.png` | XY overview of all true/recovered voids with labels |
+| `xy_projection.png` | XY scatter of A/B + true circles + recovered centres |
+| `slice_z_true_{N:03d}.png` | Per-hole 2D slice at the true centre (one per true void) |
+| `3d_truth_recovered_true_{N:03d}.png` | Per-hole 3D alpha-shape vs true sphere |
+| `radial_profile_true_{N:03d}.png` | Per-hole radial A/B density profiles |
+| `radial_profile_normalized_true_{N:03d}.png` | Same, normalised by mean density |
+| `slice_z.png` | Backward-compatible alias → `slice_z_true_000.png` |
+| `3d_truth_recovered.png` | Backward-compatible alias → `3d_truth_recovered_true_000.png` |
+| `radial_profile.png` | Backward-compatible alias → `radial_profile_true_000.png` |
+| `radial_profile_normalized.png` | Backward-compatible alias → `radial_profile_normalized_true_000.png` |
+| `component_size_dist.png` | B component size histogram |
+| `boundary_size_dist.png` | A boundary size by pipeline stage |
+| `alpha_diagnostics.png` | Alpha-shape tetrahedra counts and acceptance fraction |
+
 ### Random hole generation
 
 Pass `--random-holes` (or just `--n-holes`) to override the `void_centers` and

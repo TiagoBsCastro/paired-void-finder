@@ -213,7 +213,14 @@ def test_diagnostic_script_creates_outputs(tmp_path):
         "summary.txt",
         "match_table.csv",
         "mock_used.yaml",
+        "all_voids_overview_xy.png",
         "xy_projection.png",
+        # Per-hole files for the single true void (true_id=0).
+        "slice_z_true_000.png",
+        "3d_truth_recovered_true_000.png",
+        "radial_profile_true_000.png",
+        "radial_profile_normalized_true_000.png",
+        # Backward-compatible legacy aliases.
         "slice_z.png",
         "3d_truth_recovered.png",
         "radial_profile.png",
@@ -331,3 +338,20 @@ def test_diagnostic_script_random_holes(tmp_path):
     assert len(used["void_radii"]) == 3, (
         f"Expected 3 void_radii in mock_used.yaml, got {len(used['void_radii'])}"
     )
+
+    # All per-hole plot files for 3 holes must exist.
+    for tid in range(3):
+        tid_str = f"true_{tid:03d}"
+        for stem in ["slice_z", "3d_truth_recovered", "radial_profile",
+                     "radial_profile_normalized"]:
+            fname = f"{stem}_{tid_str}.png"
+            assert (outdir / fname).exists(), f"Missing per-hole file: {fname}"
+
+    # Legacy true_id=0 aliases must also be present.
+    for alias in ["slice_z.png", "3d_truth_recovered.png",
+                  "radial_profile.png", "radial_profile_normalized.png"]:
+        assert (outdir / alias).exists(), f"Missing legacy alias: {alias}"
+
+    # Overview plot must exist.
+    assert (outdir / "all_voids_overview_xy.png").exists(), \
+        "Missing all_voids_overview_xy.png"
