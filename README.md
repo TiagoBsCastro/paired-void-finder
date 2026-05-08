@@ -115,6 +115,44 @@ python scripts/make_mock.py --config configs/mock_geometry.yaml --out mock_geome
 CLI flags (`--box-size`, `--n-points`, `--seed`, etc.) override YAML values when
 provided.
 
+## Swiss-cheese diagnostics script
+
+Run a full diagnostic pass on a mock (generates plots, NPZ outputs, and CSV):
+
+```bash
+python scripts/run_swiss_cheese_diagnostics.py \
+    --mock-config configs/mock_geometry.yaml \
+    --finder-config configs/algorithm_default.yaml \
+    --outdir results/geometry_run
+```
+
+Use randomly generated holes instead of YAML-defined positions (5-hole example):
+
+```bash
+python scripts/run_swiss_cheese_diagnostics.py \
+    --mock-config configs/mock_geometry.yaml \
+    --finder-config configs/algorithm_default.yaml \
+    --outdir results/random_5_holes \
+    --random-holes --n-holes 5 --hole-radius 10 \
+    --min-separation-factor 2.5 --seed 42
+```
+
+When `--random-holes` or `--n-holes` is used, the script calls
+`generate_random_void_spheres` to place holes that satisfy the periodic
+non-overlap condition (centre-to-centre separation ≥ `min_separation_factor × (R_i + R_j)`).
+The final mock configuration (including the generated centres) is always saved to
+`<outdir>/mock_used.yaml` for reproducibility.
+
+Available random-hole flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--random-holes` | — | Enable random hole generation (overrides YAML `void_centers`). |
+| `--n-holes N` | — | Number of holes (required with `--random-holes`). |
+| `--hole-radius R` | — | Radius for all holes (required with `--random-holes`). |
+| `--min-separation-factor F` | 2.0 | Min centre separation as multiple of `R_i + R_j`. |
+| `--seed S` | YAML value | RNG seed (overrides YAML `seed`). |
+
 ## Diagnostics
 
 Pass `return_diagnostics=True` to get a `FinderRun` dataclass alongside the void
@@ -225,7 +263,7 @@ src/paired_void_finder/
   boundaries.py   – Veto, shell, and dilation boundary extraction
   alpha_shape.py  – 3D alpha shape, volume, centroid
   voids.py        – Top-level pipeline (run_void_finder)
-  mocks.py        – Swiss-cheese mock generation
+  mocks.py        – Swiss-cheese mock generation (`make_swiss_cheese_mock`, `generate_random_void_spheres`)
   validation.py   – validate_against_mock, ValidationSummary
 configs/
   algorithm_default.yaml

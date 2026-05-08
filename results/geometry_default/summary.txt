@@ -4,7 +4,7 @@ n_matched: 1
 n_missed: 0
 n_duplicate_matches: 0
 false_positive_count: 0
-largest_volume_fraction: 0.000208
-mean_center_error: 0.2919
-mean_radius_error: -0.7548
-mean_volume_error: -0.9853
+largest_volume_fraction: 0.013986
+mean_center_error: 0.0075
+mean_radius_error: -0.0036
+mean_volume_error: -0.0107

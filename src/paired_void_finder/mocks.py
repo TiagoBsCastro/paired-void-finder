@@ -8,6 +8,92 @@ from .catalogs import Catalog, MockCatalog
 from .periodic import periodic_distance, wrap_points
 
 
+def generate_random_void_spheres(
+    n_holes: int,
+    box_size: float,
+    radii: float | np.ndarray,
+    seed: int | None = None,
+    min_separation_factor: float = 2.0,
+    max_attempts: int = 10000,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Place *n_holes* non-overlapping spherical voids at random positions.
+
+    Holes are placed sequentially; each candidate is accepted only when its
+    periodic distance to every already-placed hole exceeds
+    ``min_separation_factor * (R_i + R_j)``.
+
+    Parameters
+    ----------
+    n_holes:
+        Number of voids to generate.
+    box_size:
+        Side length of the periodic cubic box.
+    radii:
+        Either a scalar radius (applied to all holes) or a 1-D array of
+        length *n_holes* giving a per-hole radius.
+    seed:
+        RNG seed for reproducibility.  ``None`` uses an unpredictable seed.
+    min_separation_factor:
+        Minimum centre-to-centre separation expressed as a multiple of the
+        sum of the two radii being compared.  Default 2.0 prevents overlap
+        and leaves a gap equal to one radius between adjacent sphere surfaces.
+    max_attempts:
+        Maximum number of random candidates tried per hole before raising.
+
+    Returns
+    -------
+    centers:
+        Shape ``(n_holes, 3)`` array of void centres in ``[0, box_size)``.
+    radii_out:
+        Shape ``(n_holes,)`` array of void radii (broadcast from *radii*).
+
+    Raises
+    ------
+    RuntimeError
+        If a hole cannot be placed after *max_attempts* candidates.
+    """
+    rng = np.random.default_rng(seed)
+
+    if np.isscalar(radii):
+        radii_arr = np.full(n_holes, float(radii))
+    else:
+        radii_arr = np.asarray(radii, dtype=float)
+        if radii_arr.shape != (n_holes,):
+            raise ValueError(
+                f"radii must be a scalar or a 1-D array of length n_holes={n_holes}, "
+                f"got shape {radii_arr.shape}"
+            )
+
+    placed_centers: list[np.ndarray] = []
+    placed_radii: list[float] = []
+
+    for i in range(n_holes):
+        ri = float(radii_arr[i])
+        placed = False
+        for _ in range(max_attempts):
+            c = rng.uniform(0.0, box_size, 3)
+            # Reject if c is too close to any already-placed hole.
+            ok = True
+            for cj, rj in zip(placed_centers, placed_radii):
+                d = float(periodic_distance(c[np.newaxis], cj, box_size)[0])
+                if d < min_separation_factor * (ri + rj):
+                    ok = False
+                    break
+            if ok:
+                placed_centers.append(c)
+                placed_radii.append(ri)
+                placed = True
+                break
+        if not placed:
+            raise RuntimeError(
+                f"Could not place hole {i} (R={ri:.3f}) after {max_attempts} attempts. "
+                f"The box may be too crowded (n_holes={n_holes}, box_size={box_size}, "
+                f"min_separation_factor={min_separation_factor})."
+            )
+
+    return np.array(placed_centers), radii_arr
+
+
 def _grid_points(n_points: int, box_size: float, rng: np.random.Generator, jitter: bool) -> np.ndarray:
     n_side = int(np.ceil(n_points ** (1.0 / 3.0)))
     coords = (np.arange(n_side) + 0.5) * box_size / n_side

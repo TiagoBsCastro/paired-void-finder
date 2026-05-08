@@ -1,7 +1,7 @@
 import numpy as np
 
 from paired_void_finder.catalogs import Catalog
-from paired_void_finder.mocks import make_swiss_cheese_mock
+from paired_void_finder.mocks import generate_random_void_spheres, make_swiss_cheese_mock
 from paired_void_finder.periodic import periodic_distance
 
 
@@ -74,3 +74,46 @@ def test_catalog_position_wrapping_pipeline_safe():
     params = FinderParameters(boundary_mode="shell", enable_veto=False)
     voids = run_void_finder(cat_A, cat_B, params)
     assert isinstance(voids, list)
+
+
+# ── generate_random_void_spheres ──────────────────────────────────────────────
+
+
+def test_generate_random_void_spheres_returns_correct_shapes():
+    """generate_random_void_spheres returns (centers, radii) with expected shapes."""
+    centers, radii = generate_random_void_spheres(
+        n_holes=5,
+        box_size=100.0,
+        radii=8.0,
+        seed=0,
+        min_separation_factor=2.0,
+    )
+    assert centers.shape == (5, 3), f"Expected centers shape (5, 3), got {centers.shape}"
+    assert radii.shape == (5,), f"Expected radii shape (5,), got {radii.shape}"
+    np.testing.assert_array_equal(radii, 8.0)
+    # All centres must be inside the box.
+    assert np.all(centers >= 0.0) and np.all(centers < 100.0)
+
+
+def test_generate_random_void_spheres_satisfies_non_overlap():
+    """All placed holes satisfy the periodic non-overlap condition."""
+    n_holes = 4
+    box_size = 150.0
+    radius = 10.0
+    min_sep = 2.5
+    centers, radii = generate_random_void_spheres(
+        n_holes=n_holes,
+        box_size=box_size,
+        radii=radius,
+        seed=99,
+        min_separation_factor=min_sep,
+    )
+    for i in range(n_holes):
+        for j in range(i + 1, n_holes):
+            d = float(
+                periodic_distance(centers[i : i + 1], centers[j], box_size)[0]
+            )
+            min_required = min_sep * (radii[i] + radii[j])
+            assert d >= min_required, (
+                f"Holes {i} and {j} too close: d={d:.3f} < min={min_required:.3f}"
+            )

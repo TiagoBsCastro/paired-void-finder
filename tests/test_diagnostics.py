@@ -212,6 +212,7 @@ def test_diagnostic_script_creates_outputs(tmp_path):
         "run_diagnostics.npz",
         "summary.txt",
         "match_table.csv",
+        "mock_used.yaml",
         "xy_projection.png",
         "slice_z.png",
         "3d_truth_recovered.png",
@@ -273,4 +274,60 @@ def test_alpha_scan_finds_reasonable_lambda():
     )
     assert abs(best_summary.volume_errors[0]) < 2.0, (
         f"Volume error {best_summary.volume_errors[0]:.3f} exceeds threshold 2.0 V_true"
+    )
+
+
+def test_diagnostic_script_random_holes(tmp_path):
+    """Script runs with --random-holes and saves mock_used.yaml with correct hole count."""
+    import subprocess
+
+    mock_cfg = {
+        "box_size": 100.0,
+        "n_points": 3000,
+        "mode": "geometry",
+        "seed": 7,
+        "void_centers": [[50.0, 50.0, 50.0]],
+        "void_radii": [10.0],
+    }
+    mock_cfg_path = tmp_path / "mock.yaml"
+    with open(mock_cfg_path, "w") as f:
+        yaml.dump(mock_cfg, f)
+
+    finder_cfg = _REPO_ROOT / "configs" / "algorithm_default.yaml"
+    outdir = tmp_path / "out_random"
+    outdir.mkdir()
+
+    env = os.environ.copy()
+    env["MPLBACKEND"] = "Agg"
+
+    script = _REPO_ROOT / "scripts" / "run_swiss_cheese_diagnostics.py"
+    result = subprocess.run(
+        [
+            sys.executable, str(script),
+            "--mock-config", str(mock_cfg_path),
+            "--finder-config", str(finder_cfg),
+            "--outdir", str(outdir),
+            "--random-holes",
+            "--n-holes", "3",
+            "--hole-radius", "8",
+            "--seed", "42",
+        ],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, (
+        f"Script exited with {result.returncode}\n"
+        f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+
+    # mock_used.yaml must exist and contain exactly 3 holes.
+    used_path = outdir / "mock_used.yaml"
+    assert used_path.exists(), "mock_used.yaml was not created"
+    with open(used_path) as f:
+        used = yaml.safe_load(f)
+    assert "void_centers" in used, "mock_used.yaml missing 'void_centers'"
+    assert len(used["void_centers"]) == 3, (
+        f"Expected 3 void_centers in mock_used.yaml, got {len(used['void_centers'])}"
+    )
+    assert len(used["void_radii"]) == 3, (
+        f"Expected 3 void_radii in mock_used.yaml, got {len(used['void_radii'])}"
     )

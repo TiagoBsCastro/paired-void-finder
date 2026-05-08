@@ -132,7 +132,36 @@ def main() -> None:
         "--outdir", default=".", metavar="DIR",
         help="Directory where all outputs are saved (created if absent).",
     )
+    # ── Random-holes overrides ────────────────────────────────────────────────
+    parser.add_argument(
+        "--random-holes", action="store_true",
+        help="Generate random void centres instead of using void_centers from YAML.",
+    )
+    parser.add_argument(
+        "--n-holes", type=int, default=None, metavar="N",
+        help="Number of randomly placed voids (implies --random-holes; requires --hole-radius).",
+    )
+    parser.add_argument(
+        "--hole-radius", type=float, default=None, metavar="R",
+        help="Radius applied to all randomly generated voids.",
+    )
+    parser.add_argument(
+        "--min-separation-factor", type=float, default=2.0, metavar="F",
+        help="Minimum centre separation as a multiple of (R_i + R_j). Default: 2.0.",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None, metavar="S",
+        help="RNG seed (overrides the YAML seed value).",
+    )
     args = parser.parse_args()
+
+    # Validate random-holes argument combinations.
+    use_random = args.random_holes or (args.n_holes is not None)
+    if use_random:
+        if args.n_holes is None:
+            parser.error("--n-holes is required when --random-holes is used")
+        if args.hole_radius is None:
+            parser.error("--hole-radius is required when --random-holes is used")
 
     from paired_void_finder.catalogs import FinderParameters
     from paired_void_finder.diagnostics import (
@@ -145,7 +174,7 @@ def main() -> None:
         plot_slice_truth_vs_found,
         plot_xy_projection,
     )
-    from paired_void_finder.mocks import make_swiss_cheese_mock
+    from paired_void_finder.mocks import generate_random_void_spheres, make_swiss_cheese_mock
     from paired_void_finder.voids import run_void_finder
 
     outdir = Path(args.outdir)
@@ -163,6 +192,26 @@ def main() -> None:
     void_radii = np.array(mock_cfg.get("void_radii", [15.0]))
     exterior_b_fraction = float(mock_cfg.get("exterior_b_fraction", 0.0))
 
+    # CLI overrides.
+    if args.seed is not None:
+        seed = args.seed
+    if use_random:
+        void_centers, void_radii = generate_random_void_spheres(
+            n_holes=args.n_holes,
+            box_size=box_size,
+            radii=args.hole_radius,
+            seed=seed,
+            min_separation_factor=args.min_separation_factor,
+        )
+        print(
+            f"Generated {args.n_holes} random holes "
+            f"(R={args.hole_radius}, min_sep={args.min_separation_factor})"
+        )
+    if len(void_centers) != len(void_radii):
+        raise ValueError(
+            f"len(void_centers)={len(void_centers)} != len(void_radii)={len(void_radii)}"
+        )
+
     kw: dict = {}
     if exterior_b_fraction > 0.0:
         kw["exterior_b_fraction"] = exterior_b_fraction
@@ -179,6 +228,20 @@ def main() -> None:
         f"Mock: {len(mock.A.positions)} A points, {len(mock.B.positions)} B points, "
         f"{len(mock.true_void_radii)} true voids"
     )
+
+    # ── Save the final mock config used ─────────────────────────────────────
+    mock_used_cfg: dict = {
+        "box_size": box_size,
+        "n_points": n_points,
+        "mode": mode,
+        "seed": seed,
+        "void_centers": void_centers.tolist(),
+        "void_radii": void_radii.tolist(),
+    }
+    if exterior_b_fraction > 0.0:
+        mock_used_cfg["exterior_b_fraction"] = exterior_b_fraction
+    with open(outdir / "mock_used.yaml", "w", encoding="utf-8") as f:
+        yaml.dump(mock_used_cfg, f, default_flow_style=None, sort_keys=False)
 
     # ── Run void finder ──────────────────────────────────────────────────────
     params = FinderParameters.from_yaml(args.finder_config)
