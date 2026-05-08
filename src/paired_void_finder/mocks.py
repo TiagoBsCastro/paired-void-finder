@@ -104,7 +104,10 @@ def _grid_points(n_points: int, box_size: float, rng: np.random.Generator, jitte
     n_side = int(np.ceil(n_points ** (1.0 / 3.0)))
     coords = (np.arange(n_side) + 0.5) * box_size / n_side
     grid = np.stack(np.meshgrid(coords, coords, coords, indexing="ij"), axis=-1).reshape(-1, 3)
-    points = grid[:n_points].copy()
+    # Randomly subsample so coverage is spatially uniform, not biased toward
+    # the low-index corner of the ravel order.
+    idx = rng.choice(len(grid), size=n_points, replace=False)
+    points = grid[idx].copy()
     if jitter:
         cell = box_size / n_side
         points += rng.uniform(-0.35 * cell, 0.35 * cell, size=points.shape)
