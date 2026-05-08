@@ -112,7 +112,7 @@ Generate a mock NPZ:
 python scripts/make_mock.py --config configs/mock_geometry.yaml --out mock_geometry.npz
 ```
 
-CLI flags (`--box_size`, `--n_points`, `--seed`, etc.) override YAML values when
+CLI flags (`--box-size`, `--n-points`, `--seed`, etc.) override YAML values when
 provided.
 
 ## Diagnostics

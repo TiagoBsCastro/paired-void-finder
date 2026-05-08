@@ -26,3 +26,7 @@ def test_alpha_shape_from_cube_corners_has_positive_volume():
     res = alpha_shape_3d(points, box_size=10.0, R_alpha=10.0, reference=np.array([0.5, 0.5, 0.5]))
     assert res.volume > 0.0
     assert res.effective_radius > 0.0
+    assert res.n_tetrahedra_total > 0
+    assert res.n_tetrahedra_accepted > 0
+    assert res.n_tetrahedra_accepted <= res.n_tetrahedra_total
+    assert 0.0 < res.alpha_fraction <= 1.0

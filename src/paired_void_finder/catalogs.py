@@ -125,6 +125,9 @@ class AlphaShapeResult:
     centroid_unwrapped: np.ndarray
     centroid_wrapped: np.ndarray
     effective_radius: float
+    n_tetrahedra_total: int      # total Delaunay tetrahedra before alpha filtering
+    n_tetrahedra_accepted: int   # tetrahedra surviving circumsphere and volume cuts
+    alpha_fraction: float        # n_tetrahedra_accepted / n_tetrahedra_total
 
 
 @dataclass(slots=True)

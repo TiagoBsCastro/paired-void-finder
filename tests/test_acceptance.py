@@ -87,35 +87,63 @@ def test_multi_sphere_recovers_approximately_correct_count():
 
 
 def test_veto_reduces_over_merging():
-    """Close-pair mock: enabling the veto creates more B components (less over-merging).
+    """Veto mock: reduces over-merging (topology) and recovers true spheres (geometry).
 
-    Without veto the huge B--B linking length connects all interior B points into
-    one large component.  With veto enabled, A points in the inter-sphere gap
-    intercept many B--B links, fragmenting the sphere surfaces into singletons
-    and yielding significantly more components overall.  A higher component count
-    is a direct measure of reduced over-merging.
+    Part 1 — topological check with a CLOSE pair (gap < l_BB):
+    Without veto, A points in the inter-sphere gap do not intercept B--B links,
+    so interior B points across both spheres can stay linked in one large
+    component.  With veto, those cross-gap links are intercepted, fragmenting
+    sphere surfaces into singletons and increasing the component count.
+
+    Part 2 — recovery check with a WELL-SEPARATED pair (gap >> l_BB):
+    Each sphere has enough B members and A boundary points to be recovered as a
+    distinct void.  At least one of the two true spheres must be matched with no
+    false positives.
     """
-    centers = np.array([[37.0, 50.0, 50.0], [63.0, 50.0, 50.0]])
-    radii = np.array([10.0, 10.0])
-    mock = make_swiss_cheese_mock(
+    # ── Part 1: Component count with close pair ──
+    close_centers = np.array([[37.0, 50.0, 50.0], [63.0, 50.0, 50.0]])
+    close_mock = make_swiss_cheese_mock(
         box_size=100.0,
         n_points=20000,
-        void_centers=centers,
-        void_radii=radii,
+        void_centers=close_centers,
+        void_radii=np.array([10.0, 10.0]),
         mode="geometry",
         seed=1234,
     )
     _, run_no_veto = run_void_finder(  # type: ignore[misc]
-        mock.A, mock.B, replace(_DEFAULTS, enable_veto=False), return_diagnostics=True
+        close_mock.A, close_mock.B, replace(_DEFAULTS, enable_veto=False), return_diagnostics=True
     )
     _, run_veto = run_void_finder(  # type: ignore[misc]
-        mock.A, mock.B, replace(_DEFAULTS, enable_veto=True), return_diagnostics=True
+        close_mock.A, close_mock.B, replace(_DEFAULTS, enable_veto=True), return_diagnostics=True
     )
     n_comps_no_veto = len(np.unique(run_no_veto.component_labels))
     n_comps_veto = len(np.unique(run_veto.component_labels))
     assert n_comps_veto > n_comps_no_veto, (
         f"Expected veto to fragment B into more components (less over-merging): "
         f"veto={n_comps_veto}, no_veto={n_comps_no_veto}"
+    )
+
+    # ── Part 2: Recovery check with well-separated pair ──
+    # Gap (~26) > l_BB (~22) so the FOF cannot merge the two spheres even without
+    # veto; reliable recovery is expected with boundary_mode="shell", lambda_alpha=3.0.
+    sep_centers = np.array([[25.0, 50.0, 50.0], [75.0, 50.0, 50.0]])
+    sep_mock = make_swiss_cheese_mock(
+        box_size=100.0,
+        n_points=20000,
+        void_centers=sep_centers,
+        void_radii=np.array([12.0, 12.0]),
+        mode="geometry",
+        seed=1234,
+    )
+    params_recovery = replace(_DEFAULTS, enable_veto=True, boundary_mode="shell", lambda_alpha=3.0)
+    voids_sep = run_void_finder(sep_mock.A, sep_mock.B, params_recovery)
+    summary = validate_against_mock(voids_sep, sep_mock)
+    assert summary.n_matched >= 1, (
+        f"Expected at least 1 matched void, got n_matched={summary.n_matched}, "
+        f"n_missed={summary.n_missed} from {len(voids_sep)} recovered voids"
+    )
+    assert summary.false_positive_count == 0, (
+        f"Expected no false positives, got {summary.false_positive_count}"
     )
 
 

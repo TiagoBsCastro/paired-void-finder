@@ -43,14 +43,6 @@ def run_void_finder(
     if B.masses is not None:
         B_mask = B.masses >= params.M_B_min
 
-    # Guard: veto boundary mode requires the veto mechanism to be enabled.
-    if not params.enable_veto and params.boundary_mode == "veto":
-        raise ValueError(
-            "boundary_mode='veto' requires enable_veto=True — there are no rejected "
-            "edges to build veto boundaries from when the veto is disabled. "
-            "Use boundary_mode='shell' or 'hybrid' when enable_veto=False."
-        )
-
     # Preserve mapping from sub-array index → original catalog index.
     A_orig_indices = np.flatnonzero(A_mask)
     B_orig_indices = np.flatnonzero(B_mask)

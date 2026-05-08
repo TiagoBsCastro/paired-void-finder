@@ -61,7 +61,9 @@ def alpha_shape_3d(
                 keep.append(t_idx)
                 volumes.append(vol)
                 centroids.append(np.mean(tet_points, axis=0))
-    if len(keep) == 0:
+    n_total = len(tetrahedra)
+    n_accepted = len(keep)
+    if n_accepted == 0:
         raise ValueError("Alpha shape has no accepted tetrahedra")
     v = np.asarray(volumes)
     c = np.asarray(centroids)
@@ -77,4 +79,7 @@ def alpha_shape_3d(
         centroid_unwrapped=centroid_unwrapped,
         centroid_wrapped=centroid_wrapped,
         effective_radius=R_eff,
+        n_tetrahedra_total=n_total,
+        n_tetrahedra_accepted=n_accepted,
+        alpha_fraction=float(n_accepted / n_total) if n_total > 0 else 0.0,
     )
