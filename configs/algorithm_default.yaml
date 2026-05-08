@@ -6,7 +6,7 @@ graph:
   b_BB: 1.5
 
 veto:
-  eta: 0.5
+  eta: 0.1
   N_veto: 8
   enable_veto: true
 
