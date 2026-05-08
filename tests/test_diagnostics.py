@@ -206,15 +206,28 @@ def test_alpha_scan_finds_reasonable_lambda():
     base = FinderParameters(boundary_mode="shell", enable_veto=False)
 
     found_any = False
+    best_summary = None
     for lam in [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]:
         params = replace(base, lambda_alpha=lam)
         voids = run_void_finder(mock.A, mock.B, params)
         summary = match_voids_to_truth(voids, mock)
         if summary.n_matched >= 1:
             found_any = True
+            best_summary = summary
             break
 
     assert found_any, (
         "No lambda_alpha in [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0] produced n_matched >= 1. "
         "The mock may be too sparse or the alpha shape parameters are misconfigured."
+    )
+
+    # The first (and only) match should recover the sphere with reasonable accuracy.
+    assert best_summary is not None
+    assert len(best_summary.radius_errors) >= 1, "Expected at least one radius error entry"
+    assert len(best_summary.volume_errors) >= 1, "Expected at least one volume error entry"
+    assert abs(best_summary.radius_errors[0]) < 0.5, (
+        f"Radius error {best_summary.radius_errors[0]:.3f} exceeds threshold 0.5 R_true"
+    )
+    assert abs(best_summary.volume_errors[0]) < 2.0, (
+        f"Volume error {best_summary.volume_errors[0]:.3f} exceeds threshold 2.0 V_true"
     )

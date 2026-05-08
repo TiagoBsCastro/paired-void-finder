@@ -70,6 +70,7 @@ def radial_profile(
     center: np.ndarray,
     box_size: float,
     r_bins: np.ndarray,
+    normalize_by_mean: bool = False,
 ) -> np.ndarray:
     """Number density of ``points`` in spherical shells around ``center`` (periodic BCs).
 
@@ -83,18 +84,27 @@ def radial_profile(
         Side length of the periodic box.
     r_bins:
         Bin edges, shape ``(nbins+1,)``.
+    normalize_by_mean:
+        When ``True``, divide each shell density by the mean catalog number density
+        ``n_total / box_size**3``, so that the profile is dimensionless and equals
+        1 in a uniform distribution.
 
     Returns
     -------
     density:
-        Counts divided by shell volume, shape ``(nbins,)``.
+        Counts divided by shell volume (and optionally by mean density),
+        shape ``(nbins,)``.
     """
     points = np.asarray(points, dtype=float)
     center = np.asarray(center, dtype=float)
     r = periodic_distance(points, center, box_size)
     counts, _ = np.histogram(r, bins=r_bins)
     shell_volumes = (4.0 / 3.0) * np.pi * (r_bins[1:] ** 3 - r_bins[:-1] ** 3)
-    return np.where(shell_volumes > 0, counts / shell_volumes, 0.0)
+    density = np.where(shell_volumes > 0, counts / shell_volumes, 0.0)
+    if normalize_by_mean and len(points) > 0:
+        n_mean = len(points) / box_size ** 3
+        density = density / n_mean
+    return density
 
 
 # ── Private plot utilities ────────────────────────────────────────────────────
@@ -255,12 +265,15 @@ def plot_3d_truth_and_recovered(
     outpath: str | Path | None = None,
     true_id: int = 0,
 ) -> None:
-    """3D scatter of A boundary points with a wireframe of the true sphere.
+    """3D scatter of A boundary points, recovered alpha-shape surface, and true sphere.
 
-    The A boundary points of the best-matched void are unwrapped around the
-    true sphere center to handle periodic boundary crossings.
+    All positions are unwrapped around the true sphere center so that voids
+    straddling a periodic boundary are visualised correctly.  The accepted
+    alpha-shape tetrahedra are rendered as a semi-transparent surface using
+    :class:`~mpl_toolkits.mplot3d.art3d.Poly3DCollection`.
     """
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     center = mock.true_void_centers[true_id]
     radius = mock.true_void_radii[true_id]
@@ -279,10 +292,25 @@ def plot_3d_truth_and_recovered(
 
     void, _ = select_best_match(voids, mock, true_id)
     if void is not None:
+        # All A boundary positions unwrapped around the true center (handles PBC).
         bdy_pos = mock.A.positions[void.A_boundary_indices]
-        bdy_unwrapped = unwrap_points(bdy_pos, center, bs)
-        ax3d.scatter(*bdy_unwrapped.T, s=8, c="steelblue", alpha=0.6, label="A boundary")
-        rc = void.center
+        verts_plot = unwrap_points(bdy_pos, center, bs)
+        ax3d.scatter(*verts_plot.T, s=8, c="steelblue", alpha=0.5, label="A boundary")
+
+        # Render the accepted alpha-shape tetrahedra as a surface mesh.
+        # verts_plot[k] and void.alpha_shape.vertices[k] share the same ordering
+        # (both derived from A_boundary_indices), so face connectivity transfers directly.
+        if void.alpha_shape is not None and len(void.alpha_shape.accepted_tetrahedra) > 0:
+            faces = external_faces_from_tetrahedra(void.alpha_shape.accepted_tetrahedra)
+            if len(faces) > 0:
+                triangles = verts_plot[faces]  # (M, 3, 3)
+                mesh = Poly3DCollection(
+                    triangles, alpha=0.25, facecolor="steelblue", edgecolor="none",
+                )
+                ax3d.add_collection3d(mesh)
+
+        # Unwrap the recovered center around the true center for PBC correctness.
+        rc = unwrap_points(void.center[np.newaxis], center, bs)[0]
         ax3d.scatter(rc[0], rc[1], rc[2], s=80, c="green", marker="*", zorder=5,
                      label="recovered center")
 
@@ -302,11 +330,18 @@ def plot_radial_profile(
     summary: ValidationSummary,
     outpath: str | Path | None = None,
     true_id: int = 0,
+    normalize_by_mean: bool = False,
 ) -> None:
     """Radial number-density profiles of A and B around the true void center.
 
     Vertical dashed lines mark the true sphere radius and (if matched) the
     recovered effective radius.
+
+    Parameters
+    ----------
+    normalize_by_mean:
+        When ``True``, each profile is divided by the mean catalog number density
+        so that unity corresponds to the background level.
     """
     center = mock.true_void_centers[true_id]
     radius = mock.true_void_radii[true_id]
@@ -316,8 +351,10 @@ def plot_radial_profile(
     r_bins = np.linspace(0.0, r_max, 40)
     r_mid = 0.5 * (r_bins[:-1] + r_bins[1:])
 
-    rho_A = radial_profile(mock.A.positions, center, bs, r_bins)
-    rho_B = radial_profile(mock.B.positions, center, bs, r_bins)
+    rho_A = radial_profile(mock.A.positions, center, bs, r_bins,
+                           normalize_by_mean=normalize_by_mean)
+    rho_B = radial_profile(mock.B.positions, center, bs, r_bins,
+                           normalize_by_mean=normalize_by_mean)
 
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(r_mid, rho_A, "b-o", markersize=3, label="A density")
@@ -331,7 +368,8 @@ def plot_radial_profile(
                    label=f"R_rec = {void.effective_radius:.1f}")
 
     ax.set_xlabel("r")
-    ax.set_ylabel("n / V_shell")
+    ylabel = "n / mean_n" if normalize_by_mean else "n / V_shell"
+    ax.set_ylabel(ylabel)
     ax.set_title(f"Radial profiles around true void {true_id}")
     ax.legend(loc="best", fontsize=8)
     _save_or_show(fig, outpath)
@@ -360,21 +398,43 @@ def plot_boundary_size_distribution(
     run: FinderRun,
     outpath: str | Path | None = None,
 ) -> None:
-    """Histogram of final A boundary sizes (number of A sub-points per component)."""
-    sizes = [len(v) for v in run.final_boundary_sets.values()]
-    fig, ax = plt.subplots(figsize=(6, 4))
-    if not sizes:
+    """Overlapping step histograms of A boundary sizes at all four pipeline stages.
+
+    The four stages—veto, shell, selected, and final (after dilation)—are shown
+    in the same panel so their distributions can be compared directly.
+    """
+    stages = [
+        ("veto",     run.veto_boundary_sets,     "steelblue"),
+        ("shell",    run.shell_boundary_sets,     "orange"),
+        ("selected", run.selected_boundary_sets,  "green"),
+        ("final",    run.final_boundary_sets,     "coral"),
+    ]
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    any_data = False
+    for label, bsets, color in stages:
+        sizes = [len(v) for v in bsets.values()]
+        if not sizes:
+            continue
+        any_data = True
+        all_sizes = np.asarray(sizes)
+        if all_sizes.max() <= 0:
+            continue
+        bins = np.arange(0, all_sizes.max() + 2)
+        ax.hist(all_sizes, bins=bins, histtype="step", color=color, linewidth=1.5,
+                label=f"{label} (n={len(sizes)})")
+
+    if not any_data:
         ax.text(0.5, 0.5, "No boundaries", ha="center", va="center",
                 transform=ax.transAxes)
         _save_or_show(fig, outpath)
         return
-    n_bins = max(10, len(sizes) // 5 + 1)
-    ax.hist(sizes, bins=n_bins, color="coral", edgecolor="white")
+
     ax.set_xlabel("Boundary size (# A points)")
     ax.set_ylabel("Count")
-    ax.set_title("A boundary size distribution (final, after dilation)")
-    if max(sizes) > 0:
-        ax.set_yscale("log")
+    ax.set_title("A boundary size distribution by pipeline stage")
+    ax.legend(fontsize=8)
+    ax.set_yscale("log")
     _save_or_show(fig, outpath)
 
 

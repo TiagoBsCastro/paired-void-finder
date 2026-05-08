@@ -224,7 +224,13 @@ def main() -> None:
     # ── match_table.csv ──────────────────────────────────────────────────────
     with open(outdir / "match_table.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["true_id", "void_id", "center_error", "radius_error", "volume_error"])
+        writer.writerow([
+            "true_id", "void_id", "center_error", "radius_error", "volume_error",
+            "center_x", "center_y", "center_z", "R_eff", "volume",
+            "N_B", "N_A_boundary",
+            "alpha_tetrahedra_total", "alpha_tetrahedra_accepted", "alpha_fraction",
+            "component_id",
+        ])
         for true_id, void_id, ce, re, ve in zip(
             summary.matched_true_indices,
             summary.matched_void_indices,
@@ -232,9 +238,24 @@ def main() -> None:
             summary.radius_errors,
             summary.volume_errors,
         ):
-            writer.writerow(
-                [int(true_id), int(void_id), f"{ce:.4f}", f"{re:.4f}", f"{ve:.4f}"]
-            )
+            v = voids[int(void_id)]
+            cx, cy, cz = v.center
+            if v.alpha_shape is not None:
+                n_tot = v.alpha_shape.n_tetrahedra_total
+                n_acc = v.alpha_shape.n_tetrahedra_accepted
+                afrac = v.alpha_shape.alpha_fraction
+            else:
+                n_tot = n_acc = afrac = ""
+            comp_id = v.metadata.get("component_id", "")
+            writer.writerow([
+                int(true_id), int(void_id), f"{ce:.4f}", f"{re:.4f}", f"{ve:.4f}",
+                f"{cx:.4f}", f"{cy:.4f}", f"{cz:.4f}",
+                f"{v.effective_radius:.4f}", f"{v.volume:.4f}",
+                len(v.B_indices), len(v.A_boundary_indices),
+                n_tot, n_acc,
+                f"{afrac:.4f}" if isinstance(afrac, float) else afrac,
+                comp_id,
+            ])
 
     # ── Diagnostic plots ──────────────────────────────────────────────────────
     plot_xy_projection(mock, voids, summary, outpath=outdir / "xy_projection.png")

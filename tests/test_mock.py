@@ -46,3 +46,31 @@ def test_veto_mock_adds_exterior_b_decoys():
     )
     dB = periodic_distance(mock.B.positions, mock.true_void_centers[0], mock.B.box_size)
     assert np.any(dB > mock.true_void_radii[0])
+
+
+def test_catalog_position_wrapping_pipeline_safe():
+    """Positions outside [0, box_size) are silently wrapped, and the pipeline runs without error."""
+    from paired_void_finder.catalogs import FinderParameters
+    from paired_void_finder.voids import run_void_finder
+
+    rng = np.random.default_rng(7)
+    box_size = 50.0
+    n = 300
+
+    # Generate positions slightly outside the box (in range [-5, 55]).
+    raw_pos = rng.uniform(-5.0, 55.0, (n, 3))
+    # Intentional: some positions will be in (-5, 0) or (50, 55).
+    A_pos = raw_pos[:200]
+    B_pos = raw_pos[200:]
+
+    cat_A = Catalog(A_pos, None, box_size=box_size, name="A")
+    cat_B = Catalog(B_pos, None, box_size=box_size, name="B")
+
+    # Verify wrapping happened at construction.
+    assert np.all(cat_A.positions >= 0.0) and np.all(cat_A.positions < box_size)
+    assert np.all(cat_B.positions >= 0.0) and np.all(cat_B.positions < box_size)
+
+    # The pipeline must not raise (e.g., no cKDTree out-of-bounds exception).
+    params = FinderParameters(boundary_mode="shell", enable_veto=False)
+    voids = run_void_finder(cat_A, cat_B, params)
+    assert isinstance(voids, list)
