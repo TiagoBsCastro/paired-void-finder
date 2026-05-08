@@ -110,42 +110,58 @@ def radial_profile(
 # ── Private plot utilities ────────────────────────────────────────────────────
 
 
-def _alpha_shape_slice_segments(
-    verts: np.ndarray,
+def triangle_plane_intersections(
+    vertices: np.ndarray,
     faces: np.ndarray,
-    ax_idx: int,
-    plane_val: float,
-) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Line segments where the alpha-shape surface intersects a plane.
+    axis_index: int,
+    plane_value: float,
+    atol: float = 1e-10,
+) -> list[np.ndarray]:
+    """Return line segments where a triangulated surface intersects a coordinate plane.
 
     Parameters
     ----------
-    verts:
+    vertices:
         Vertex positions, shape ``(N, 3)``, in a consistent (unwrapped) frame.
     faces:
-        External triangular faces, shape ``(M, 3)``, indices into *verts*.
-    ax_idx:
-        Index of the slice axis (0 = x, 1 = y, 2 = z).
-    plane_val:
-        Coordinate value of the slice plane along *ax_idx*.
+        Triangular faces, shape ``(M, 3)``, integer indices into *vertices*.
+    axis_index:
+        Index of the slice axis: 0 = x, 1 = y, 2 = z.
+    plane_value:
+        Coordinate value of the cutting plane along *axis_index*.
+    atol:
+        Vertices within *atol* of the plane are treated as lying on the plane.
+        This avoids double-counting a segment when an edge is exactly in the plane.
 
     Returns
     -------
     segments:
-        List of ``(p0, p1)`` pairs, each a shape-``(3,)`` array in 3D.
-        Only triangles that actually cross the plane are included.
+        List of ``(2, 3)`` float arrays, one per intersecting triangle.
+        Each row is one endpoint of the segment in 3D.
+        Triangles that do not cross the plane produce no entry.
     """
-    segments: list[tuple[np.ndarray, np.ndarray]] = []
+    vertices = np.asarray(vertices, dtype=float)
+    faces = np.asarray(faces, dtype=int)
+    segments: list[np.ndarray] = []
     for tri in faces:
-        p = verts[tri]            # (3, 3)
-        d = p[:, ax_idx] - plane_val
+        p = vertices[tri]               # (3, 3)
+        d = p[:, axis_index] - plane_value
+        # Snap near-plane vertices to exactly on the plane to avoid float noise.
+        d = np.where(np.abs(d) <= atol, 0.0, d)
         crossings: list[np.ndarray] = []
         for i, j in ((0, 1), (1, 2), (0, 2)):
-            if d[i] * d[j] < 0:  # sign change → edge crosses the plane
+            if d[i] * d[j] < 0:        # strict sign change → edge crosses plane
                 t = d[i] / (d[i] - d[j])
                 crossings.append(p[i] + t * (p[j] - p[i]))
-        if len(crossings) == 2:
-            segments.append((crossings[0], crossings[1]))
+            elif d[i] == 0.0 and d[j] != 0.0:   # vertex exactly on plane
+                crossings.append(p[i].copy())
+        # Remove duplicates that arise when two edges share an on-plane vertex.
+        unique: list[np.ndarray] = []
+        for c in crossings:
+            if not any(np.allclose(c, u, atol=atol) for u in unique):
+                unique.append(c)
+        if len(unique) == 2:
+            segments.append(np.array([unique[0], unique[1]]))
     return segments
 
 
@@ -231,11 +247,18 @@ def plot_slice_truth_vs_found(
 ) -> None:
     """2D slab slice perpendicular to *axis* at the center of true sphere *true_id*.
 
-    A points and B points within a slab of half-thickness ``R_true / 4`` around
-    the cut plane are shown.  The A boundary of the best-matched recovered void
-    and its center are overlaid when a match exists.  When the void has an
-    accepted alpha shape, its intersection contour with the slice plane is drawn
-    as magenta line segments computed via triangle-plane intersection.
+    A and B points within a slab of half-thickness ``R_true / 4`` are shown.
+    For the best-matched recovered void the following overlays are drawn:
+
+    * **A boundary points** — purple scatter of A-catalog boundary particles in the slab.
+    * **Alpha-shape slice** — solid purple line segments from the intersection of the
+      alpha-shape surface with the cutting plane, computed via
+      :func:`triangle_plane_intersections`.
+    * **Recovered R_eff circle** — dashed purple circle centred on the recovered
+      centroid (unwrapped around the true center to handle PBC correctly).
+    * **Recovered center** — green star marker.
+
+    The figure title includes the number of alpha-shape slice segments.
     """
     _AXIS_MAP = {"x": 0, "y": 1, "z": 2}
     if axis not in _AXIS_MAP:
@@ -273,32 +296,46 @@ def plot_slice_truth_vs_found(
         "g--", linewidth=1.5, label="true sphere",
     )
 
+    n_alpha_segs = 0
     void, _ = select_best_match(voids, mock, true_id)
     if void is not None:
+        # A boundary points in the slab.
         bdy = mock.A.positions[void.A_boundary_indices]
         mb = _in_slab(bdy)
         if mb.any():
             ax.scatter(
                 bdy[mb, other[0]], bdy[mb, other[1]],
-                s=12, c="purple", alpha=0.8, label="A boundary", zorder=4,
+                s=12, c="purple", alpha=0.8, label="A boundary points", zorder=4,
             )
 
-        # Alpha-shape slice contour: intersection of the surface with the cut plane.
+        # Alpha-shape slice: surface × cutting plane.
         if void.alpha_shape is not None and len(void.alpha_shape.accepted_tetrahedra) > 0:
             verts_uw = unwrap_points(mock.A.positions[void.A_boundary_indices], center, bs)
             faces = external_faces_from_tetrahedra(void.alpha_shape.accepted_tetrahedra)
             if len(faces) > 0:
-                segs = _alpha_shape_slice_segments(verts_uw, faces, ax_idx, center[ax_idx])
-                for k, (q0, q1) in enumerate(segs):
+                segs = triangle_plane_intersections(
+                    verts_uw, faces, ax_idx, center[ax_idx]
+                )
+                n_alpha_segs = len(segs)
+                for k, seg in enumerate(segs):
                     ax.plot(
-                        [q0[other[0]], q1[other[0]]],
-                        [q0[other[1]], q1[other[1]]],
-                        color="magenta", linewidth=1.2, alpha=0.85,
+                        [seg[0, other[0]], seg[1, other[0]]],
+                        [seg[0, other[1]], seg[1, other[1]]],
+                        color="purple", linewidth=1.2,
                         label="alpha-shape slice" if k == 0 else "",
                     )
 
+        # Recovered R_eff circle centred on the recovered centroid unwrapped
+        # around the true center so that PBC voids are visualised correctly.
+        rc = unwrap_points(void.center[np.newaxis], center, bs)[0]
+        ax.plot(
+            rc[other[0]] + void.effective_radius * np.cos(theta),
+            rc[other[1]] + void.effective_radius * np.sin(theta),
+            color="purple", linestyle="--", linewidth=1.2,
+            label=f"R_eff = {void.effective_radius:.1f}",
+        )
         ax.scatter(
-            void.center[other[0]], void.center[other[1]],
+            rc[other[0]], rc[other[1]],
             marker="*", s=150, c="green", zorder=5, label="recovered center",
         )
 
@@ -309,6 +346,7 @@ def plot_slice_truth_vs_found(
     ax.set_ylabel(ax_names[other[1]])
     ax.set_title(
         f"Slice at {axis}={center[ax_idx]:.1f} (±{slab_half:.1f})"
+        f" | alpha-shape segments: {n_alpha_segs}"
     )
     _legend_dedup(ax)
     _save_or_show(fig, outpath)

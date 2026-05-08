@@ -26,6 +26,7 @@ from paired_void_finder.diagnostics import (
     plot_xy_projection,
     radial_profile,
     select_best_match,
+    triangle_plane_intersections,
 )
 from paired_void_finder.mocks import make_swiss_cheese_mock
 from paired_void_finder.voids import run_void_finder
@@ -59,6 +60,47 @@ def test_external_faces_two_tetrahedra_share_face():
     for f in faces:
         assert not np.array_equal(f, shared), "Shared face (0,1,2) found in external faces"
     assert len(faces) == 6, f"Expected 6 external faces, got {len(faces)}"
+
+
+# ── triangle_plane_intersections ──────────────────────────────────────────────
+
+
+def test_triangle_plane_intersections_one_crossing():
+    """A triangle that straddles the z=0 plane produces exactly one segment."""
+    # Triangle with one vertex below z=0 and two above.
+    verts = np.array([
+        [0.0, 0.0, -1.0],   # below
+        [1.0, 0.0,  1.0],   # above
+        [0.0, 1.0,  1.0],   # above
+    ])
+    faces = np.array([[0, 1, 2]])
+    segs = triangle_plane_intersections(verts, faces, axis_index=2, plane_value=0.0)
+    assert len(segs) == 1, f"Expected 1 segment, got {len(segs)}"
+    seg = segs[0]
+    assert seg.shape == (2, 3), f"Segment shape should be (2, 3), got {seg.shape}"
+    # Both endpoints must lie on the plane z=0.
+    np.testing.assert_allclose(seg[:, 2], 0.0, atol=1e-10)
+
+
+def test_triangle_plane_intersections_no_crossing():
+    """A triangle entirely above the plane produces no segments."""
+    verts = np.array([
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 2.0],
+        [0.0, 1.0, 3.0],
+    ])
+    faces = np.array([[0, 1, 2]])
+    segs = triangle_plane_intersections(verts, faces, axis_index=2, plane_value=0.0)
+    assert len(segs) == 0, f"Expected 0 segments, got {len(segs)}"
+
+
+def test_slice_plot_creates_nonempty_png(tmp_path):
+    """plot_slice_truth_vs_found writes a non-empty PNG file."""
+    mock, voids, run, summary = _get_smoke_data()
+    outpath = tmp_path / "slice_test.png"
+    plot_slice_truth_vs_found(mock, voids, summary, outpath=outpath)
+    assert outpath.exists(), "slice_test.png was not created"
+    assert outpath.stat().st_size > 0, "slice_test.png is empty"
 
 
 # ── radial_profile ────────────────────────────────────────────────────────────
