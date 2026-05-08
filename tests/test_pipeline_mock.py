@@ -9,7 +9,7 @@ from paired_void_finder.voids import run_void_finder
 
 
 def test_pipeline_recovers_one_known_sphere():
-    """Pipeline correctly recovers one known sphere and returns diagnostics."""
+    """Pipeline with boundary_mode='shell' recovers one known sphere."""
     mock = make_swiss_cheese_mock(
         box_size=100.0,
         n_points=10000,
@@ -18,30 +18,38 @@ def test_pipeline_recovers_one_known_sphere():
         mode="geometry",
         seed=42,
     )
-    params = FinderParameters(lambda_alpha=3.0)
+    # boundary_mode="shell" is explicit: build the boundary from A points near B
+    # members rather than from veto records alone.
+    params = FinderParameters(lambda_alpha=3.0, boundary_mode="shell")
     voids, run = run_void_finder(mock.A, mock.B, params, return_diagnostics=True)
 
     # Structural checks on the diagnostic record.
     assert run.A_orig_indices.dtype == int
     assert run.B_orig_indices.dtype == int
+    # component_labels is indexed by B sub-index (one entry per surviving B point).
     assert len(run.component_labels) == len(run.B_orig_indices)
     assert isinstance(run.edges, list)
     assert run.veto_radii is not None  # veto was enabled by default
 
-    # At least one void should be recovered.
     assert len(voids) >= 1, f"Expected at least 1 void, got {len(voids)}"
 
-    # The recovered void's B_indices and A_boundary_indices should be original
-    # catalog indices, not sub-array indices.
+    # B_indices and A_boundary_indices must reference original catalog positions.
     v = voids[0]
     assert np.all(v.B_indices < len(mock.B.positions)), "B_indices out of range"
     assert np.all(v.A_boundary_indices < len(mock.A.positions)), "A_boundary_indices out of range"
 
-    # Validate center error.
+    # One-to-one match: exactly one true void and we expect to find it.
     summary = validate_against_mock(voids, mock)
-    assert summary.center_errors.size >= 1
+    assert summary.n_matched == 1, f"Expected n_matched=1, got {summary.n_matched}"
+    assert summary.n_missed == 0, f"Expected n_missed=0, got {summary.n_missed}"
     assert summary.center_errors[0] < 0.3, (
         f"Center error {summary.center_errors[0]:.3f} R_true >= 0.3"
+    )
+    assert abs(summary.radius_errors[0]) < 0.3, (
+        f"Radius error {summary.radius_errors[0]:.4f} outside ±0.3"
+    )
+    assert abs(summary.volume_errors[0]) < 0.6, (
+        f"Volume error {summary.volume_errors[0]:.4f} outside ±0.6"
     )
 
 
@@ -88,3 +96,59 @@ def test_pipeline_original_indices_preserved_after_mass_cut():
         # All referenced B positions should have passed the mass cut.
         assert np.all(masses_B[v.B_indices] >= 0.9)
         assert np.all(masses_A[v.A_boundary_indices] >= 0.9)
+
+
+def test_hybrid_falls_back_to_shell_when_veto_disabled():
+    """With veto disabled, hybrid mode must use shell boundaries for every component.
+
+    When enable_veto=False all veto_boundary_sets are empty, so hybrid always
+    falls back to shell.  The resulting void catalog must equal the one from
+    an explicit boundary_mode='shell' run.
+    """
+    mock = make_swiss_cheese_mock(
+        box_size=100.0,
+        n_points=10000,
+        void_centers=np.array([[50.0, 50.0, 50.0]]),
+        void_radii=np.array([15.0]),
+        mode="geometry",
+        seed=42,
+    )
+    params_hybrid = FinderParameters(
+        enable_veto=False, boundary_mode="hybrid", lambda_alpha=3.0
+    )
+    voids_hybrid, run_hybrid = run_void_finder(
+        mock.A, mock.B, params_hybrid, return_diagnostics=True
+    )
+
+    params_shell = FinderParameters(
+        enable_veto=False, boundary_mode="shell", lambda_alpha=3.0
+    )
+    voids_shell = run_void_finder(mock.A, mock.B, params_shell)
+
+    # With no veto, veto_boundary_sets must all be empty.
+    for comp_id, veto_b in run_hybrid.veto_boundary_sets.items():
+        assert len(veto_b) == 0, (
+            f"Component {comp_id} has {len(veto_b)} veto-boundary points "
+            "despite veto being disabled"
+        )
+
+    # Selected boundary must equal shell boundary for every component.
+    for comp_id in run_hybrid.selected_boundary_sets:
+        np.testing.assert_array_equal(
+            np.sort(run_hybrid.selected_boundary_sets[comp_id]),
+            np.sort(run_hybrid.shell_boundary_sets[comp_id]),
+            err_msg=f"Component {comp_id}: selected ≠ shell despite empty veto set",
+        )
+
+    # Both runs should produce the same number of voids.
+    assert len(voids_hybrid) == len(voids_shell), (
+        f"hybrid={len(voids_hybrid)} voids, shell={len(voids_shell)} voids"
+    )
+
+
+def test_guard_enable_veto_false_boundary_mode_veto():
+    """FinderParameters raises ValueError when veto is disabled but mode is 'veto'."""
+    import pytest
+
+    with pytest.raises(ValueError, match="boundary_mode='veto'"):
+        FinderParameters(enable_veto=False, boundary_mode="veto")

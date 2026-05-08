@@ -29,6 +29,10 @@ class Catalog:
                 raise ValueError("masses must have shape (N,)")
         if self.box_size <= 0:
             raise ValueError("box_size must be positive")
+        # Wrap positions into [0, box_size) so that cKDTree(boxsize=...) gets
+        # valid inputs.  Floating-point boundary points from Pinocchio or other
+        # codes that land exactly on box_size are also corrected here.
+        self.positions = self.positions % self.box_size
 
 
 @dataclass(slots=True)
@@ -73,6 +77,11 @@ class FinderParameters:
             raise ValueError(
                 f"boundary_mode must be one of {sorted(_VALID_BOUNDARY_MODES)!r}, "
                 f"got {self.boundary_mode!r}"
+            )
+        if not self.enable_veto and self.boundary_mode == "veto":
+            raise ValueError(
+                "boundary_mode='veto' requires enable_veto=True. "
+                "Use boundary_mode='shell' or boundary_mode='hybrid' instead."
             )
 
     @classmethod
@@ -136,20 +145,41 @@ class Void:
 class FinderRun:
     """Diagnostic record from a single run_void_finder call.
 
-    All index arrays that reference A or B points use **original** catalog
-    indices (i.e. into A.positions / B.positions before mass cuts).
-    Sub-array indices (into the mass-cut-filtered positions) are used only
-    internally and are not stored here.
+    Index semantics
+    ---------------
+    Two index "spaces" are used throughout:
+
+    *original indices*: into A.positions / B.positions **before** mass cuts.
+    *sub-indices*: into A_pos / B_pos, the filtered sub-arrays after mass cuts.
+
+    Conversion: ``A.positions[A_orig_indices[k]]`` is the position of
+    sub-array A point *k*; ``B.positions[B_orig_indices[k]]`` likewise.
+
+    Field-level notes:
+
+    * ``A_orig_indices``, ``B_orig_indices`` – **original indices** of the
+      points that survived the mass cut.
+    * ``component_labels`` – one value per sub-array B point (length =
+      len(B_orig_indices)).  Value is the component ID (0-based int).
+    * ``veto_radii`` – one radius per sub-array A point (length =
+      len(A_orig_indices)).  None when enable_veto=False.
+    * ``edges`` – each Edge.i, Edge.j are **B sub-indices**.
+    * ``*_boundary_sets`` – dict mapping component ID → numpy array of
+      **A sub-indices**.  Use ``A_orig_indices[v]`` to convert to original
+      catalog indices.  (``Void.A_boundary_indices`` already stores original
+      catalog indices.)
+    * ``voids`` – each ``Void.B_indices`` and ``Void.A_boundary_indices``
+      store **original catalog indices**.
     """
 
     params: FinderParameters
-    A_orig_indices: np.ndarray              # original A indices surviving mass cut
-    B_orig_indices: np.ndarray              # original B indices surviving mass cut
-    edges: list[Edge]                       # all B--B edges after veto annotation
-    veto_radii: np.ndarray | None           # per-masked-A veto radius; None if disabled
-    component_labels: np.ndarray            # per-masked-B component label (0-based)
-    veto_boundary_sets: dict[int, np.ndarray]    # A sub-indices from veto mechanism
-    shell_boundary_sets: dict[int, np.ndarray]   # A sub-indices from shell mechanism
-    selected_boundary_sets: dict[int, np.ndarray]  # chosen boundary before dilation
-    final_boundary_sets: dict[int, np.ndarray]   # chosen boundary after dilation
+    A_orig_indices: np.ndarray          # original A indices surviving mass cut
+    B_orig_indices: np.ndarray          # original B indices surviving mass cut
+    edges: list[Edge]                   # all B--B edges after veto annotation; i,j are B sub-indices
+    veto_radii: np.ndarray | None       # per-sub-array-A veto radius; None if veto disabled
+    component_labels: np.ndarray        # per-sub-array-B component label (0-based int)
+    veto_boundary_sets: dict[int, np.ndarray]     # comp_id → A sub-index array (veto mechanism)
+    shell_boundary_sets: dict[int, np.ndarray]    # comp_id → A sub-index array (shell mechanism)
+    selected_boundary_sets: dict[int, np.ndarray] # comp_id → A sub-index array (before dilation)
+    final_boundary_sets: dict[int, np.ndarray]    # comp_id → A sub-index array (after dilation)
     voids: list[Void]
